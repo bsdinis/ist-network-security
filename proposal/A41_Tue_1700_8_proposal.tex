@@ -1,0 +1,80 @@
+\documentclass[11pt,twoside,a4paper,twocolumn]{article}
+
+\usepackage{fancyhdr} % Required for custom headers
+\usepackage{lastpage} % Required to determine the last page for the footer
+\usepackage{extramarks} % Required for headers and footers
+\usepackage[usenames,dvipsnames]{color} % Required for custom colors
+\usepackage{graphicx} % Required to insert images
+\usepackage{listings} % Required for insertion of code
+\usepackage{courier} % Required for the courier font
+\usepackage[utf8]{inputenc}
+\usepackage{scrextend}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{amsfonts}
+\usepackage{array}
+\usepackage{charter}
+\usepackage[colorlinks = true, linkcolor = blue, urlcolor  = blue, citecolor = blue, anchorcolor = blue]{hyperref}
+\usepackage{esdiff}
+\usepackage{tabularx}
+
+\usepackage{biblatex}
+\addbibresource{\jobname.bib}
+
+% Margins
+\topmargin=-0.45in
+\evensidemargin=0in
+\oddsidemargin=0in
+\textwidth=6.5in
+\textheight=9.0in
+\headsep=0.25in
+
+\linespread{1.1} % Line spacing
+\setlength\parindent{0pt} % Removes all indentation from paragraphs
+\newcommand{\tabcell}[1]{\begin{tabular}{@{}c@{}}#1\end{tabular}}
+
+% remove enourmous space after items
+
+\newcommand{\sys}{\emph{r2-store}}
+\newcommand{\Title}{\sys: A ransomware-resistant document store}
+\newcommand{\CourseName}{Network and Computer Security}
+
+%----------------------------------------------------------------------------------------
+%	TITLE PAGE
+%----------------------------------------------------------------------------------------
+
+\title{
+    \centering
+    \vspace{1in}
+    \textmd{\textbf{\Title}}\\
+    \normalsize\vspace{0.1in}\small{\CourseName}\\
+    \normalsize\vspace{0.1in}\small{Alameda Group 41}\\
+    \vspace{2in}
+}
+
+
+\author{
+    \centering
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{r r c}
+        André \textsc{Breda}    & 89409 & \tabcell{\includegraphics[width=2cm]{img/bread.png}}\\
+        Baltasar \textsc{Dinis} & 89416 & \tabcell{\includegraphics[width=2cm]{img/bsd.png}}\\
+        Wilson \textsc{Pereira} & 89561 & \tabcell{\includegraphics[width=2cm]{img/wilson.png}}
+    \end{tabular}
+}
+\date{} % Insert date here if you want it to appear below your name
+
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+\clearpage
+
+\input{src/problem}
+\input{src/sol}
+\input{src/plan}
+\printbibliography
+
+\end{document}

@@ -1,0 +1,50 @@
+\section{Problem}
+
+We wish to protect a document storage system, which backs an
+application where clients collaborate on documents, from
+ransomware attacks on the servers. We need to tolerate situations
+where an attacker can access the persistent storage backing this
+system, and replace it either with an outdated version or an
+encrypted version.
+
+\subsection{Requirements}
+The solution should:
+\begin{itemize}
+    \setlength{\itemsep}{0pt}
+    \setlength{\parskip}{0pt}
+    \setlength{\parsep}{0pt}
+    \item Tolerate a subset of servers with tampered
+        persistent storage;
+    \item Allow for deletions from the file (after being
+        agreed by a sufficient subset of the collaborators);
+    \item Tolerate a subset of malicious collaborators, which
+        may try to delete the file or corrupt it;
+    \item Allow for concurrent collaboration of documents;
+    \item Provide confidentiality of the documents: it should
+        be impossible for the servers, other clients or a
+        malicious attackers to see the cleartext contents of
+        the file;
+    \item Provide integrity of the documents: it should
+        be impossible for the servers, other clients or a
+        malicious attackers to change the content of
+        the file;
+    \item Allow for membership changes: if a client is added,
+        it can see the full history of the file; if a client
+        is removed, it should not be able to see new
+        modifications.
+\end{itemize}
+
+\subsection{Trust Assumptions}
+We assume the server code (written by us) to be correct. We
+assume that the persistent storage backing the server can be
+changed by a malicious administrator.
+
+Unauthenticated clients are fully untrusted by the servers.
+Authenticated clients are not assumed to follow the protocol
+correctly. Servers are fully untrusted by clients. Clients
+partially trust their collaborators: it should be possible for
+a majority of clients to rollback changes performed by a malicious client.
+Collaborators fully trust the owner of the file to change the
+membership of the file. There is a trusted administrator which
+remotely provisions the servers with their keys.
+
