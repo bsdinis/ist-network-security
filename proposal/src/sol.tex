@@ -51,19 +51,15 @@ Figure \ref{fig:overview}), plus a Certification Authority (\textbf{CA}):
 
 \subsection{Deployment}
 
-Each server and each client will be deployed on a separate VM.
-All servers communicate with each other through an isolated network.
+Each server and each client will be deployed on a separate
+Docker instance.  All servers communicate with each other through an isolated network.
 A client can connect to any server.
 
 \subsection{Secure Channels}
 
-All communication will be ciphered using TLS. Each server will
-have hardcoded the public key of an administrator. After booting,
-the administrator will establish a secure channel (SSH) (proving its
-identity based on that public key) and provide the server with
-its configuration: its private key and certificate and the list
-of public keys of the other servers. For simplicity, we assume
-that the set of servers is static.
+All communication will be protected using TLS. For simplicity it
+is assumed that the server has access to its certificates and the
+certificates (and location) of its peers.
 
 Clients trust on servers is rooted on a signed certificate from a
 trusted Certificate Authority. They establish a connection with a
@@ -90,18 +86,6 @@ receives the requests from a majority of collaborators. This
 protects against client-issued ransomware: if a client decides,
 in a diff, to encrypt all the data, the rest of the clients can
 simply rollback the diff.
-
-\begin{table*}[ht]
-    \centering
-    \label{Effort Commitment}
-    \begin{tabular}{r|l|l|l}
-        & AB & BSD & WP \\
-        \hline
-        Nov 16th & client diffs & consensus protocol & add/get + doc creation \\
-        Nov 23th & rollback & squash & document creation \\
-        Nov 30th & demonstration & document membership changes & key provisioning\\
-    \end{tabular}
-\end{table*}
 
 Each document has a \emph{document key}. This key is only known
 to the collaborators and is used to encrypt diffs. This way, we
