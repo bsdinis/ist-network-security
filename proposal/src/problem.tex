@@ -35,29 +35,41 @@ The solution should:
     \item Provide non-repudiability of specific document changes;
 \end{itemize}
 
+\newpage
+
 \subsection{Trust Assumptions}
-We assume the server code (written by us) to be correct. We
-assume that the persistent storage backing the server can be
-changed by a malicious administrator.
+\begin{itemize}
+    \setlength{\itemsep}{0pt}
+    \setlength{\parskip}{0pt}
+    \setlength{\parsep}{0pt}
+    \item We assume the server code (written by us) to be correct.
+    
+    \item We assume that the persistent storage backing the server
+	can be changed by a malicious administrator.
 
-Unauthenticated clients are fully untrusted by the servers.
-Authenticated clients are not assumed to follow the protocol
-correctly.
-Servers are fully untrusted by clients for confidentiality.
-For data integrity, clients do trust a server quorum.
+    \item Unauthenticated clients are fully untrusted by the servers.
 
-Clients partially trust their collaborators: it should be possible for
-a majority of clients to rollback changes performed by a malicious client.
+    \item Authenticated clients are not assumed to follow the protocol
+        correctly.
 
-Collaborators fully trust the owner of the file to change the
-membership of the file.
+    \item Servers are fully untrusted by clients for confidentiality.
+        For data integrity, clients do trust a server quorum.
 
-There is a trusted administrator which
-remotely provisions the servers with their keys for secure
-communication with clients/other servers.
+    \item Clients partially trust their collaborators: it should
+	be possible for a majority of clients to rollback changes
+	performed by a malicious client.
 
-Clients and Servers trust the CA for certification of server's keys
-for the effects of having secure channels (in client-server communication).
+    \item Collaborators fully trust the owner of the file to change
+	the membership of the file.
 
-Everyone trusts the CA for certification of client's keys for
-non-repudiation of other's changes.
+    \item There is a trusted administrator which remotely provisions
+	the servers with their keys for secure communication with
+        clients/other servers.
+
+    \item Clients and Servers trust the CA for certification of server's
+	keys for the effects of having secure channels
+	(in client-server and server-server communication).
+
+    \item Everyone trusts the CA for certification of client's keys for
+        non-repudiation of other's changes.
+\end{itemize}
