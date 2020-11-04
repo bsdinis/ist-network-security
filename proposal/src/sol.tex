@@ -3,7 +3,7 @@
 \subsection{Overview}
 
 We partition our system in 3 compontents (showcased in
-\ref{fig:overview}):
+\ref{fig:overview}), plus a Certification Authority(\textbf{CA}):
 \begin{itemize}
     \setlength{\itemsep}{0pt}
     \setlength{\parskip}{0pt}
@@ -41,7 +41,7 @@ We partition our system in 3 compontents (showcased in
         \hline
         $get$ & document name & list of diffs and version hash \\
         \hline
-        $compress$ & document name, signed compressed document, version hash & registers a positive ack to compressing the document\\
+        $squash$ & document name, signed squashed document, version hash & registers a positive ack to squashing the document\\
         \hline
         $rollback$ & document name, version hash & registers a positive ack to rollbacking a particular version\\
         \hline
@@ -52,14 +52,14 @@ We partition our system in 3 compontents (showcased in
 \subsection{Deployment}
 
 Each server and each client will be deployed on a separate VM.
-All servers communicate with each other. A client can connect to
-any server.
+All servers communicate with each other through an isolated network.
+A client can connect to any server.
 
 \subsection{Secure Channels}
 
 All communication will be ciphered using TLS. Each server will
 have hardcoded the public key of an administrator. After booting,
-the administrator will establish a secure channel (proving its
+the administrator will establish a secure channel (SSH) (proving its
 identity based on that public key) and provide the server with
 its configuration: its private key and certificate and the list
 of public keys of the other servers. For simplicity, we assume
@@ -81,6 +81,8 @@ making it possible to assign versions to the document.
 
 Clients have asymmetric keys and are identified by their public
 keys.
+Their public key is stored by the CA, associated to their identity,
+for non-repudiability.
 
 Diffs are signed by the author, making it possible to rollback a
 diff. However, the server only rollbacks a particular diff if it
@@ -96,7 +98,7 @@ simply rollback the diff.
         & AB & BSD & WP \\
         \hline
         Nov 16th & client diffs & consensus protocol & add/get + doc creation \\
-        Nov 23th & rollback & compress & document creation \\
+        Nov 23th & rollback & squash & document creation \\
         Nov 30th & demonstration & document membership changes & key provisioning\\
     \end{tabular}
 \end{table*}
@@ -117,7 +119,7 @@ with the old key and re-encrypt all the diffs with the new key.
 This way, the purged collaborator cannot make or see new
 modifications.
 
-It is possible to compress the document, by replacing the diff
+It is possible to squash the document, by replacing the diff
 chain with a single diff. This requires approval from a majority
 of collaborators. This effectively makes it possible to remove
 something from the document permanentely, if the majority agrees.
@@ -125,6 +127,12 @@ We believe this is a desirable feature, and it is the main reason
 we chose this solution versus, for instance, a blockchain based
 approach: if a collaborator uploads illegal/undesired content, it
 can be deleted safely.
+
+Squashing is of course destructive: it makes it impossible to retrieve
+from the server the history of changes before the point in time when
+it happens. Should a client want to keep a log of changes for non-repudiability,
+they must be the one to do it. The space savings offered by squashing are
+fundamentally incompatible with author attribution to individual changes.
 
 We consider that $\lfloor \frac{n - 1}{3} \rfloor$ servers can
 behave in a Byzantine fashion, by having had their persistent
@@ -134,10 +142,10 @@ We refer the reader to \cite{pbft} for a description of a Byzantine
 consensus protocol. In terms of the state machine (ie: the API
 exposed by the servers) it is described in Table~\ref{tab:api}.
 
-Note that in the case of the compress and rollback commands, any
+Note that in the case of the squash and rollback commands, any
 client can issue the first request and the server will in its
 turn ask the other clients. The clients may then either reject
-the request or reply positively, making the compress and rollback
+the request or reply positively, making the squash and rollback
 commands.
 
 The implementation will be made in Rust\cite{rust}. There will be an

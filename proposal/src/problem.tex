@@ -32,6 +32,7 @@ The solution should:
         it can see the full history of the file; if a client
         is removed, it should not be able to see new
         modifications.
+    \item Provide non-repudiability of specific document changes;
 \end{itemize}
 
 \subsection{Trust Assumptions}
@@ -46,5 +47,6 @@ partially trust their collaborators: it should be possible for
 a majority of clients to rollback changes performed by a malicious client.
 Collaborators fully trust the owner of the file to change the
 membership of the file. There is a trusted administrator which
-remotely provisions the servers with their keys.
+remotely provisions the servers with their keys for secure
+communication with clients/other servers.
 

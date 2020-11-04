@@ -7,7 +7,6 @@
         \setlength{\itemsep}{0pt}
         \setlength{\parskip}{0pt}
         \setlength{\parsep}{0pt}
-        \item Assume pre-shared keys on the servers;
         \item Implement document creation: assume pre shared key;
         \item Implement add/get interface for servers: confidentiality and integrity;
         \item Implement diff application on the clients;
@@ -20,10 +19,9 @@
         \setlength{\itemsep}{0pt}
         \setlength{\parskip}{0pt}
         \setlength{\parsep}{0pt}
-        \item Assume pre-shared keys on the servers;
         \item Implement document creation: creation and distribution of the key;
-        \item Implement compress: remove illegal/unwanted content, performance boos;
-        \item Implement rollback: protect agains client-issued ransomware;
+        \item Implement squash: remove illegal/unwanted content, performance boos;
+        \item Implement rollback: protect against client-issued ransomware;
     \end{itemize}
     Expected conclusion: November 27th.
 }
@@ -33,8 +31,8 @@
         \setlength{\itemsep}{0pt}
         \setlength{\parskip}{0pt}
         \setlength{\parsep}{0pt}
-        \item Implement key provisioning on the servers
-        \item Implement document membership changes;
+	\item Implement change non-repudiation (requires implementing CA);
+	\item Implement document membership changes (grants are trivial, revokes not so much);
     \end{itemize}
     Expected conclusion: December 4th.
 }
