@@ -42,17 +42,22 @@ changed by a malicious administrator.
 
 Unauthenticated clients are fully untrusted by the servers.
 Authenticated clients are not assumed to follow the protocol
-correctly. Servers are fully untrusted by clients for confidentiality.
-For data integrity, clients do trust a server quorum. Clients
-partially trust their collaborators: it should be possible for
+correctly.
+Servers are fully untrusted by clients for confidentiality.
+For data integrity, clients do trust a server quorum.
+
+Clients partially trust their collaborators: it should be possible for
 a majority of clients to rollback changes performed by a malicious client.
+
 Collaborators fully trust the owner of the file to change the
-membership of the file. There is a trusted administrator which
+membership of the file.
+
+There is a trusted administrator which
 remotely provisions the servers with their keys for secure
 communication with clients/other servers.
 
 Clients and Servers trust the CA for certification of server's keys
 for the effects of having secure channels (in client-server communication).
 
-Everyone trusts the CA for certification of client's keys for the effects
-of non-repudiation fo their changes.
+Everyone trusts the CA for certification of client's keys for
+non-repudiation of other's changes.
