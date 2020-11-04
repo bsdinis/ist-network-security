@@ -42,7 +42,8 @@ changed by a malicious administrator.
 
 Unauthenticated clients are fully untrusted by the servers.
 Authenticated clients are not assumed to follow the protocol
-correctly. Servers are fully untrusted by clients. Clients
+correctly. Servers are fully untrusted by clients for confidentiality.
+For data integrity, clients do trust a server quorum. Clients
 partially trust their collaborators: it should be possible for
 a majority of clients to rollback changes performed by a malicious client.
 Collaborators fully trust the owner of the file to change the
