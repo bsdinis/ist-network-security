@@ -20,7 +20,7 @@ Figure \ref{fig:overview}), plus a Certification Authority (\textbf{CA}):
     \includegraphics[width=.5\linewidth]{img/sys-1}
     \caption{System overview. Storage in blue has been rolled
     back. Storage in red has been victim of a ransomware attack.
-    Client in read is malicious.}
+    Client in red is malicious.}
     \label{fig:overview}
 \end{figure}
 
@@ -72,7 +72,7 @@ The TLS library used will be \texttt{rustls}\cite{rustls}.
 The protocol is based on the notion of applying diffs.
 Clients, when editing, will periodically send the diff to a
 server which will run a consensus protocol to propagate the diff
-to all servers. This way, a total order of diffs is establhished,
+to all servers. This way, a total order of diffs is established,
 making it possible to assign versions to the document.
 
 Clients have asymmetric keys and are identified by their public
@@ -114,7 +114,7 @@ can be deleted safely.
 
 Squashing is of course destructive: it makes it impossible to retrieve
 from the server the history of changes before the point in time when
-it happens. Should a client want to keep a log of changes for non-repudiability,
+it happens. Should a client want to keep a log of changes for non-repudiation,
 they must be the one to do it. The space savings offered by squashing are
 fundamentally incompatible with author attribution to individual changes.
 
