@@ -52,7 +52,9 @@ Figure \ref{fig:overview}), plus a Certification Authority (\textbf{CA}):
 \subsection{Deployment}
 
 Each server and each client will be deployed on a separate
-Docker instance.  All servers communicate with each other through an isolated network.
+Docker instance.
+Servers can communicate with each other over the internet or
+a (redundant) isolated network.
 A client can connect to any server.
 
 \subsection{Secure Channels}
@@ -93,7 +95,9 @@ achieve confidentiality of the documents. Integrity is achieved
 by employing the consensus protocol (which ensures that the diffs
 are totally ordered, and as such the document cannot be tampered
 by slightly reordering concurrent diffs) and by using an
-authenticated encryption scheme (namely GCM).
+authenticated encryption scheme (namely GCM) with the \emph{document key}.
+Note, however, that diffs are still signed with the author's
+public key for non-repudiation purposes.
 
 The document key is chosen by the owner upon creation. To add collaborators, the owner
 simply encrypts the document key with the collaborator's public
