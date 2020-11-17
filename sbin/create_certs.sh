@@ -45,7 +45,7 @@ crl = \$dir/.crl.pem
 private_key = \$dir/${prefix_notdir}${CA_HOSTNAME}.key
 RANDFILE = \$dir/.rand
 default_days = 365
-default_md = sha3-512
+default_md = sha512
 default_crl_days = 30
 policy = policy_match
 prompt = no
@@ -104,6 +104,7 @@ gen_cert() {
 }
 
 echo "Creating CA"
+rm "${prefix_dir}/"{.index.txt{,.attr,.old},.serial} 2>/dev/null || true
 touch "${prefix_dir}/.index.txt"
 gen_privkey "$CA_HOSTNAME"
 # create self-signed certificate for CA
