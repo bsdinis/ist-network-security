@@ -99,7 +99,7 @@ gen_privkey() {
 gen_cert() {
     # Usage: gen_cert <hostname>
     openssl req -new -key "$prefix${1}.key" -config <(openssl_cert_conf "${1}") -extensions req_ext -out "$prefix${1}.csr"
-    openssl ca -in "$prefix${1}.csr" -cert "$prefix${CA_HOSTNAME}.pem" -extfile <(openssl_ext_file "$1") -create_serial -out "$prefix${1}.pem" -config <(openssl_cert_conf "${1}")
+    openssl ca -batch -in "$prefix${1}.csr" -cert "$prefix${CA_HOSTNAME}.pem" -extfile <(openssl_ext_file "$1") -create_serial -out "$prefix${1}.pem" -config <(openssl_cert_conf "${1}")
     rm "$prefix${1}.csr"
 }
 
