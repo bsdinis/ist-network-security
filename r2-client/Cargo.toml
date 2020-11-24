@@ -18,3 +18,5 @@ serde = { version = "1.0", features = ["derive"] }
 ring = { version = "0.16.17", features = ["std"] }
 diffy = "0.2.0"
 chrono = { version = "0.4.19", features = ["serde"] }
+toml = "0.5"
+fs2 = "0.4.3"
