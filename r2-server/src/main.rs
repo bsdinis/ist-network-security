@@ -1,14 +1,13 @@
-use argh::FromArgs;
-use std::fs::File;
-use std::io::{self, BufReader};
+use std::io;
 use std::net::ToSocketAddrs;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use tokio::io::{copy, sink, split, AsyncWriteExt};
-use tokio::net::TcpListener;
-use tokio_rustls::rustls::internal::pemfile::{certs, rsa_private_keys};
-use tokio_rustls::rustls::{Certificate, NoClientAuth, PrivateKey, ServerConfig};
-use tokio_rustls::TlsAcceptor;
+use std::path::PathBuf;
+
+use argh::FromArgs;
+
+use tonic::{Request, Response, Status};
+use tonic::transport::{Server, Identity, Certificate, ServerTlsConfig};
+use protos::client_api_server::{ClientApi, ClientApiServer};
+use protos::{HelloWorldResponse, HelloWorldRequest};
 
 /// Tokio Rustls server example
 #[derive(FromArgs)]
@@ -25,23 +24,25 @@ struct Options {
     #[argh(option, short = 'k')]
     key: PathBuf,
 
-    /// echo mode
-    #[argh(switch, short = 'e')]
-    echo_mode: bool,
+    /// CA cert file (for client authentication)
+    #[argh(option, short = 'a')]
+    ca_cert: PathBuf,
 }
 
-fn load_certs(path: &Path) -> io::Result<Vec<Certificate>> {
-    certs(&mut BufReader::new(File::open(path)?))
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cert"))
-}
+#[derive(Default)]
+struct ClientApiServerImpl;
 
-fn load_keys(path: &Path) -> io::Result<Vec<PrivateKey>> {
-    rsa_private_keys(&mut BufReader::new(File::open(path)?))
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid key"))
+#[tonic::async_trait]
+impl ClientApi for ClientApiServerImpl {
+    async fn hello(&self, req: Request<HelloWorldRequest>) -> Result<Response<HelloWorldResponse>, Status> {
+        Ok(Response::new(HelloWorldResponse {
+            resp: format!("Hello {}!", req.get_ref().name),
+        }))
+    }
 }
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options: Options = argh::from_env();
 
     let addr = options
@@ -49,53 +50,23 @@ async fn main() -> io::Result<()> {
         .to_socket_addrs()?
         .next()
         .ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
-    let certs = load_certs(&options.cert)?;
-    let mut keys = load_keys(&options.key)?;
-    let flag_echo = options.echo_mode;
 
-    let mut config = ServerConfig::new(NoClientAuth::new());
-    config
-        .set_single_cert(certs, keys.remove(0))
-        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
-    let acceptor = TlsAcceptor::from(Arc::new(config));
+    let cert = tokio::fs::read(options.cert).await?;
+    let key = tokio::fs::read(options.key).await?;
+    let server_identity = Identity::from_pem(cert, key);
 
-    let listener = TcpListener::bind(&addr).await?;
+    let ca_cert_file = tokio::fs::read(options.ca_cert).await?;
+    let ca_cert = Certificate::from_pem(ca_cert_file);
 
-    loop {
-        let (stream, peer_addr) = listener.accept().await?;
-        let acceptor = acceptor.clone();
+    let tls_config = ServerTlsConfig::new()
+        .identity(server_identity)
+        .client_ca_root(ca_cert);
 
-        let fut = async move {
-            let mut stream = acceptor.accept(stream).await?;
+    Server::builder()
+        .tls_config(tls_config)?
+        .add_service(ClientApiServer::new(ClientApiServerImpl::default()))
+        .serve(addr)
+        .await?;
 
-            if flag_echo {
-                let (mut reader, mut writer) = split(stream);
-                let n = copy(&mut reader, &mut writer).await?;
-                writer.flush().await?;
-                println!("Echo: {} - {}", peer_addr, n);
-            } else {
-                let mut output = sink();
-                stream
-                    .write_all(
-                        &b"HTTP/1.0 200 ok\r\n\
-                    Connection: close\r\n\
-                    Content-length: 12\r\n\
-                    \r\n\
-                    Hello world!"[..],
-                    )
-                    .await?;
-                stream.shutdown().await?;
-                copy(&mut stream, &mut output).await?;
-                println!("Hello: {}", peer_addr);
-            }
-
-            Ok(()) as io::Result<()>
-        };
-
-        tokio::spawn(async move {
-            if let Err(err) = fut.await {
-                eprintln!("{:?}", err);
-            }
-        });
-    }
+    Ok(())
 }

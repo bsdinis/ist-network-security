@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package r2;
+
+message HelloWorldRequest {
+	string name = 1;
+}
+
+message HelloWorldResponse {
+	string resp = 1;
+}
+
+service ClientApi {
+	rpc hello(HelloWorldRequest) returns (HelloWorldResponse);
+}

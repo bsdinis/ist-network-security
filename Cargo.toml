@@ -1,6 +1,7 @@
 [workspace]
 members = [
 	"r2",
+	"protos",
 	"r2-client",
 	"r2-server",
 ]
