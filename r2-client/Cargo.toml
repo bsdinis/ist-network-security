@@ -1,14 +1,20 @@
 [package]
 name = "r2-client"
 version = "0.1.0"
-authors = ["bsdinis <baltasar.dinis@tecnico.ulisboa.com>", "abread <andrebreda@tecnico.ulisboa.pt>", "wilson <wilson.jose.lourenco.pereira@tecnico.ulisboa.pt>"]
+authors = [
+	"bsdinis <baltasar.dinis@tecnico.ulisboa.com>",
+	"abread <andrebreda@tecnico.ulisboa.pt>",
+	"wilson <wilson.jose.lourenco.pereira@tecnico.ulisboa.pt>",
+]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+tokio = { version = "0.2.23", features = ["full"] }
+tonic = { version = "0.3.1", features = ["tls"] }
 
-ring = "0.16.17"
-diffy = "0.2.0"
-chrono = "0.4.19"
 serde = { version = "1.0", features = ["derive"] }
+ring = { version = "0.16.17", features = ["std"] }
+diffy = "0.2.0"
+chrono = { version = "0.4.19", features = ["serde"] }

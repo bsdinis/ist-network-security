@@ -127,6 +127,7 @@ dependencies = [
  "libc",
  "num-integer",
  "num-traits",
+ "serde",
  "time",
  "winapi 0.3.9",
 ]
@@ -690,12 +691,10 @@ dependencies = [
  "argh",
  "chrono",
  "diffy",
- "fs2",
  "protos",
  "ring",
  "serde",
  "tokio",
- "toml",
  "tonic",
 ]
 
@@ -705,8 +704,12 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "diffy",
+ "fs2",
  "ring",
  "serde",
+ "tokio",
+ "toml",
+ "tonic",
 ]
 
 [[package]]

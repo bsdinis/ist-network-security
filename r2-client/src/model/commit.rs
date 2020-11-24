@@ -4,12 +4,12 @@ use ring::{digest, signature};
 use ring::rand::SystemRandom;
 use serde::{Serialize, Deserialize};
 
-const ID_DIGEST_ALGO: &digest::Algorithm = &digest::SHA512;
-const COMMIT_SIGN_ALGO: &dyn signature::RsaEncoding = &signature::RSA_PSS_SHA512;
-const COMMIT_SIGN_VERIFY_ALGO: &dyn signature::VerificationAlgorithm = &signature::RSA_PSS_2048_8192_SHA512;
+static ID_DIGEST_ALGO: &digest::Algorithm = &digest::SHA512;
+static COMMIT_SIGN_ALGO: &dyn signature::RsaEncoding = &signature::RSA_PSS_SHA512;
+pub static COMMIT_SIGN_VERIFY_ALGO: &dyn signature::VerificationAlgorithm = &signature::RSA_PSS_2048_8192_SHA512;
 
 /// Unverified or in progress commit. Can be (de)serialized.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct CommitData {
     pub id: String,
 
@@ -43,17 +43,26 @@ type CommitSignError = Box<dyn std::error::Error>;
 
 impl CommitData {
     /// Finish commit by setting the author and signing it, returning a trustworthy `Commit` struct
-    pub fn author<B: AsRef<[u8]>>(self, author: &User<B>) -> Result<Commit, CommitSignError> {
-        self.author_id = author.id;
+    pub fn author<B: AsRef<[u8]>>(mut self, author: &User<B>) -> Result<Commit, CommitSignError> {
+        self.author_id = author.id.to_owned();
 
-        let keypair = author.privkey.ok_or("author has no keypair")?;
+        let keypair = author.privkey.as_ref().ok_or("author has no keypair")?;
 
         let bytes = self.bytes();
         let rng = SystemRandom::new();
         self.signature = vec![0; keypair.public_modulus_len()];
-        keypair.sign(COMMIT_SIGN_ALGO, rng, bytes, &mut self.signature)?;
+        keypair.sign(COMMIT_SIGN_ALGO, &rng, &bytes, &mut self.signature)?;
 
-        Ok(Commit {..self})
+        Ok(Commit {
+            id: self.id,
+            prev_commit_id: self.prev_commit_id,
+            author_id: self.author_id,
+            ts: self.ts,
+            message: self.message,
+            patch: self.patch,
+            signature: self.signature,
+            _priv: (),
+        })
     }
 
     /// Verify commit (loaded from outside), returning a trustworthy `Commit` struct
@@ -62,7 +71,7 @@ impl CommitData {
         let generated_id = self.gen_id();
 
         if self.id != generated_id {
-            return Err(format!("Badly generated commit ID. Expected {}, got {}", generated_id, self.id));
+            return Err(format!("Badly generated commit ID. Expected {}, got {}", generated_id, self.id))?;
         }
 
         assert_eq!(self.author_id, author.id, "Tried to verify signature with wrong key");
@@ -70,26 +79,33 @@ impl CommitData {
         let bytes = self.bytes();
         author.pubkey.verify(&bytes, &self.signature)?;
 
-        Ok(Commit {..self})
+        Ok(Commit {
+            id: self.id,
+            prev_commit_id: self.prev_commit_id,
+            author_id: self.author_id,
+            ts: self.ts,
+            message: self.message,
+            patch: self.patch,
+            signature: self.signature,
+            _priv: (),
+        })
     }
 
     /// Create byte array with all commit data for signing (or ID generation when the self.id == "")
     fn bytes(&self) -> Vec<u8> {
-        let bytes = Vec::new();
-
-        bytes.push(self.id.as_bytes());
-        bytes.push(self.prev_commit_id.unwrap_or(String::new()).as_bytes());
-        bytes.push(self.author_id.as_bytes());
-        bytes.push(self.ts.to_rfc3339().as_bytes());
-        bytes.push(self.message.as_bytes());
-        bytes.push(self.patch.as_bytes());
-
-        bytes
+        self.id.as_bytes().to_owned().iter()
+            .chain(self.prev_commit_id.as_ref().unwrap_or(&String::new()).as_bytes())
+            .chain(self.author_id.as_bytes())
+            .chain(self.ts.to_rfc3339().as_bytes())
+            .chain(self.message.as_bytes())
+            .chain(self.patch.as_bytes())
+            .map(|byteref| *byteref)
+            .collect()
     }
 
     /// Generate ID for current commit (does not change with already present ID or signature)
     fn gen_id(&self) -> String {
-        let commit_empty_id = Commit {id: "".to_owned(), ..self};
+        let commit_empty_id = CommitData {id: "".to_owned(), ..self.clone()};
 
         let bytes = commit_empty_id.bytes();
         let digest = digest::digest(ID_DIGEST_ALGO, &bytes);
@@ -100,6 +116,14 @@ impl CommitData {
 
 impl From<Commit> for CommitData {
     fn from(c: Commit) -> Self {
-        CommitData {..c}
+        CommitData {
+            id: c.id,
+            prev_commit_id: c.prev_commit_id,
+            author_id: c.author_id,
+            ts: c.ts,
+            message: c.message,
+            patch: c.patch,
+            signature: c.signature,
+        }
     }
 }
