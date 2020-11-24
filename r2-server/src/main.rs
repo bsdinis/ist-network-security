@@ -41,6 +41,15 @@ impl ClientApi for ClientApiServerImpl {
     }
 }
 
+async fn ctrl_c() {
+    use std::future;
+
+    if let Err(_) = tokio::signal::ctrl_c().await {
+        eprintln!("Failed to listen for Ctrl+C/SIGINT. Server will still exit after receiving them, just not gracefully.");
+        future::pending::<()>().await; // never completes
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options: Options = argh::from_env();
@@ -62,11 +71,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .identity(server_identity)
         .client_ca_root(ca_cert);
 
-    Server::builder()
+    let server = Server::builder()
         .tls_config(tls_config)?
         .add_service(ClientApiServer::new(ClientApiServerImpl::default()))
-        .serve(addr)
-        .await?;
+        .serve_with_shutdown(addr, ctrl_c());
 
+    println!("Sever listening on {:?}", addr);
+    server.await?;
+
+    println!("Bye!");
     Ok(())
 }
