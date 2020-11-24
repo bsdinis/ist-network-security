@@ -705,6 +705,7 @@ dependencies = [
  "chrono",
  "diffy",
  "fs2",
+ "lazy_static",
  "ring",
  "serde",
  "tokio",

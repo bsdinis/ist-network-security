@@ -1,12 +1,10 @@
 use super::user::User;
 use chrono::{DateTime, Utc};
-use ring::{digest, signature};
-use ring::rand::SystemRandom;
+use crate::sigkey::{SignatureVerifier, MaybeSigner};
+use ring::digest;
 use serde::{Serialize, Deserialize};
 
 static ID_DIGEST_ALGO: &digest::Algorithm = &digest::SHA512;
-static COMMIT_SIGN_ALGO: &dyn signature::RsaEncoding = &signature::RSA_PSS_SHA512;
-pub static COMMIT_SIGN_VERIFY_ALGO: &dyn signature::VerificationAlgorithm = &signature::RSA_PSS_2048_8192_SHA512;
 
 /// Unverified or in progress commit. Can be (de)serialized.
 #[derive(Deserialize, Serialize, Clone)]
@@ -43,15 +41,11 @@ type CommitSignError = Box<dyn std::error::Error>;
 
 impl CommitData {
     /// Finish commit by setting the author and signing it, returning a trustworthy `Commit` struct
-    pub fn author<B: AsRef<[u8]>>(mut self, author: &User<B>) -> Result<Commit, CommitSignError> {
+    pub fn author(mut self, author: &User) -> Result<Commit, CommitSignError> {
         self.author_id = author.id.to_owned();
 
-        let keypair = author.privkey.as_ref().ok_or("author has no keypair")?;
-
         let bytes = self.bytes();
-        let rng = SystemRandom::new();
-        self.signature = vec![0; keypair.public_modulus_len()];
-        keypair.sign(COMMIT_SIGN_ALGO, &rng, &bytes, &mut self.signature)?;
+        self.signature = author.sign(&bytes)?;
 
         Ok(Commit {
             id: self.id,
@@ -67,7 +61,7 @@ impl CommitData {
 
     /// Verify commit (loaded from outside), returning a trustworthy `Commit` struct
     /// Verification amounts to checking that the ID was properly derived from the data, and that the signature is valid.
-    pub fn verify<B: AsRef<[u8]>>(self, author: &User<B>) -> Result<Commit, CommitVerifyError> {
+    pub fn verify(self, author: &User) -> Result<Commit, CommitVerifyError> {
         let generated_id = self.gen_id();
 
         if self.id != generated_id {
@@ -77,7 +71,7 @@ impl CommitData {
         assert_eq!(self.author_id, author.id, "Tried to verify signature with wrong key");
 
         let bytes = self.bytes();
-        author.pubkey.verify(&bytes, &self.signature)?;
+        author.verify(&bytes, &self.signature)?;
 
         Ok(Commit {
             id: self.id,
