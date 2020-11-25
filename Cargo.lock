@@ -689,11 +689,7 @@ name = "r2"
 version = "0.1.0"
 dependencies = [
  "argh",
- "chrono",
- "diffy",
  "protos",
- "ring",
- "serde",
  "tokio",
  "tonic",
 ]

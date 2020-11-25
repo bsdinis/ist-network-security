@@ -1,13 +1,17 @@
 [package]
 name = "r2"
 version = "0.1.0"
-authors = ["bsdinis <baltasar.dinis@tecnico.ulisboa.com>", "abread <andrebreda@tecnico.ulisboa.pt>", "wilson <wilson.jose.lourenco.pereira@tecnico.ulisboa.pt>"]
+authors = [
+	"bsdinis <baltasar.dinis@tecnico.ulisboa.com>",
+	"abread <andrebreda@tecnico.ulisboa.pt>",
+	"wilson <wilson.jose.lourenco.pereira@tecnico.ulisboa.pt>",
+]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "0.2.23", features = [ "full" ] }
+tokio = { version = "0.2.23", features = ["full"] }
 tonic = { version = "0.3.1", features = ["tls"] }
 protos = { path = "../protos" }
 argh = "0.1"

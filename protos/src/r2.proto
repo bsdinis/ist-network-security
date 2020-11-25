@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package r2;
+
+message User {
+	bytes pubkey = 1;
+
+	// in get_metadata: omitted for all users but the requestor
+	bytes ciphered_document_key = 2;
+}
+
+message Collaborators {
+	repeated User collaborators = 1;
+	uint64 ts = 2;
+	bytes signature = 3;
+}
+
+message Commit {
+	string commit_id = 1;
+	bytes data = 3;
+}
+
+message CreateRequest {
+	Commit initial_commit = 1;
+	// implied: owner is the requestor, should also be present in collaborators
+	Collaborators collaborators = 2;
+}
+
+message CreateResponse {
+	string document_id = 1;
+}
+
+message CommitRequest {
+	string document_id = 1;
+	Commit commit = 2;
+}
+
+message CommitResponse {}
+
+message FetchCommitRequest {
+	string document_id = 1;
+	string commit_id = 2;
+}
+
+message FetchCommitResponse {
+	Commit commit = 1;
+}
+
+message GetMetadataRequest {
+	string document_id = 1;
+}
+
+message GetMetadataResponse {
+	string head = 1;
+	User owner = 2;
+	Collaborators collaborators = 3;
+	SquashRequest pending_squash = 4;
+	uint64 pending_squash_remaining_votes = 5;
+	RollbackRequest pending_rollback = 6;
+	uint64 pending_rollback_remaining_votes = 7;
+}
+
+message EditCollaboratorsRequest {
+	string document_id = 1;
+	Collaborators collaborators = 2;
+}
+
+message EditCollaboratorsResponse {}
+
+message SquashRequest {
+	string document_id = 1;
+	string from_commit_id = 2;
+	string to_commit_id = 3;
+	repeated string dropped_commit_ids = 4;
+}
+
+message SquashResponse {
+	uint64 remaining_votes = 1;
+}
+
+message RollbackRequest {
+	string document_id = 1;
+	string target_commit_id = 2;
+	repeated string dropped_commit_ids = 3;
+}
+
+message RollbackResponse {
+	uint64 remaining_votes = 1;
+}
+
+service ClientApi {
+	// Create document
+	rpc create(CreateRequest) returns (CreateResponse);
+
+	// Get document metadata (HEAD, colaborators)
+	rpc get_metadata(GetMetadataRequest) returns (GetMetadataResponse);
+
+	// Get one commit
+	rpc fetch_commit(FetchCommitRequest) returns (FetchCommitResponse);
+
+	// Commit and advance HEAD
+	rpc commit(CommitRequest) returns (CommitResponse);
+
+	// Change list of collaborators
+	rpc edit_collaborators(EditCollaboratorsRequest) returns (EditCollaboratorsResponse);
+
+	// Vote for squashing commits
+	// to_commit_id must match the server's head
+	// Prevents other commits for a set period of time
+	rpc squash(SquashRequest) returns (SquashResponse);
+
+	// Vote for rolling back HEAD (and discarding commits ahead of it)
+	// Prevents other commits for a set period of time
+	rpc rollback(RollbackRequest) returns (RollbackRequest);
+}

@@ -4,10 +4,11 @@ use std::path::PathBuf;
 
 use argh::FromArgs;
 
-use tonic::{Request, Response, Status};
 use tonic::transport::{Server, Identity, Certificate, ServerTlsConfig};
-use protos::client_api_server::{ClientApi, ClientApiServer};
-use protos::{HelloWorldResponse, HelloWorldRequest};
+use protos::client_api_server::ClientApiServer;
+
+pub mod services;
+use services::client_api::ClientApiService;
 
 /// Tokio Rustls server example
 #[derive(FromArgs)]
@@ -27,27 +28,6 @@ struct Options {
     /// CA cert file (for client authentication)
     #[argh(option, short = 'a')]
     ca_cert: PathBuf,
-}
-
-#[derive(Default)]
-struct ClientApiServerImpl;
-
-#[tonic::async_trait]
-impl ClientApi for ClientApiServerImpl {
-    async fn hello(&self, req: Request<HelloWorldRequest>) -> Result<Response<HelloWorldResponse>, Status> {
-        Ok(Response::new(HelloWorldResponse {
-            resp: format!("Hello {}!", req.get_ref().name),
-        }))
-    }
-}
-
-async fn ctrl_c() {
-    use std::future;
-
-    if let Err(_) = tokio::signal::ctrl_c().await {
-        eprintln!("Failed to listen for Ctrl+C/SIGINT. Server will still exit after receiving them, just not gracefully.");
-        future::pending::<()>().await; // never completes
-    }
 }
 
 #[tokio::main]
@@ -73,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let server = Server::builder()
         .tls_config(tls_config)?
-        .add_service(ClientApiServer::new(ClientApiServerImpl::default()))
+        .add_service(ClientApiServer::new(ClientApiService::new()))
         .serve_with_shutdown(addr, ctrl_c());
 
     println!("Sever listening on {:?}", addr);
@@ -81,4 +61,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Bye!");
     Ok(())
+}
+
+async fn ctrl_c() {
+    use std::future;
+
+    if let Err(_) = tokio::signal::ctrl_c().await {
+        eprintln!("Failed to listen for Ctrl+C/SIGINT. Server will still exit after receiving them, just not gracefully.");
+        future::pending().await // never completes
+    }
 }

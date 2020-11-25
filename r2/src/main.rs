@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use argh::FromArgs;
 use tonic::transport::{Channel, ClientTlsConfig, Certificate, Identity, Uri};
 use tonic::Request;
-use protos::HelloWorldRequest;
+use protos::GetMetadataRequest;
 use protos::client_api_client::ClientApiClient;
 
 /// Tokio Rustls client example
@@ -71,11 +71,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect().await?;
 
     let mut client = ClientApiClient::new(channel);
-    let resp = client.hello(Request::new(HelloWorldRequest {
-        name: "Pedro".to_owned()
+    let resp = client.get_metadata(Request::new(GetMetadataRequest {
+        document_id: "teste".to_owned()
     })).await?.into_inner();
 
-    println!("Response: {}", resp.resp);
+    println!("get_metdata(document_id=teste): {:?}", resp);
 
     Ok(())
 }
