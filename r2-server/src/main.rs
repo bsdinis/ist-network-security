@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use argh::FromArgs;
 
-use tonic::transport::{Server, Identity, Certificate, ServerTlsConfig};
 use protos::client_api_server::ClientApiServer;
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
 pub mod services;
 use services::client_api::ClientApiService;

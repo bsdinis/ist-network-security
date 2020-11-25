@@ -1,5 +1,5 @@
-use diffy::{Patch, apply};
 use super::commit::Commit;
+use diffy::{apply, Patch};
 
 type Error = Box<dyn std::error::Error>; // TODO: use more specific type
 

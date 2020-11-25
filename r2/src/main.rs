@@ -1,12 +1,12 @@
-use std::fs;
 use std::convert::{TryFrom, TryInto};
+use std::fs;
 use std::path::PathBuf;
 
 use argh::FromArgs;
-use tonic::transport::{Channel, ClientTlsConfig, Certificate, Identity, Uri};
-use tonic::Request;
-use protos::GetMetadataRequest;
 use protos::client_api_client::ClientApiClient;
+use protos::GetMetadataRequest;
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
+use tonic::Request;
 
 /// Tokio Rustls client example
 #[derive(FromArgs)]
@@ -68,12 +68,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config: ClientConfig = argh::from_env::<Options>().try_into()?;
     let channel = Channel::builder(config.server_addr)
         .tls_config(config.tls_config)?
-        .connect().await?;
+        .connect()
+        .await?;
 
     let mut client = ClientApiClient::new(channel);
-    let resp = client.get_metadata(Request::new(GetMetadataRequest {
-        document_id: "teste".to_owned()
-    })).await?.into_inner();
+    let resp = client
+        .get_metadata(Request::new(GetMetadataRequest {
+            document_id: "teste".to_owned(),
+        }))
+        .await?
+        .into_inner();
 
     println!("get_metdata(document_id=teste): {:?}", resp);
 

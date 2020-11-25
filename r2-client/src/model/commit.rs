@@ -1,8 +1,8 @@
 use super::user::User;
+use crate::sigkey::{MaybeSigner, SignatureVerifier};
 use chrono::{DateTime, Utc};
-use crate::sigkey::{SignatureVerifier, MaybeSigner};
 use ring::digest;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 static ID_DIGEST_ALGO: &digest::Algorithm = &digest::SHA512;
 
@@ -65,10 +65,16 @@ impl CommitData {
         let generated_id = self.gen_id();
 
         if self.id != generated_id {
-            return Err(format!("Badly generated commit ID. Expected {}, got {}", generated_id, self.id))?;
+            return Err(format!(
+                "Badly generated commit ID. Expected {}, got {}",
+                generated_id, self.id
+            ))?;
         }
 
-        assert_eq!(self.author_id, author.id, "Tried to verify signature with wrong key");
+        assert_eq!(
+            self.author_id, author.id,
+            "Tried to verify signature with wrong key"
+        );
 
         let bytes = self.bytes();
         author.verify(&bytes, &self.signature)?;
@@ -87,19 +93,31 @@ impl CommitData {
 
     /// Create byte array with all commit data for signing (or ID generation when the self.id == "")
     fn bytes(&self) -> Vec<u8> {
-        self.id.as_bytes().to_owned().iter()
-            .chain(self.prev_commit_id.as_ref().unwrap_or(&String::new()).as_bytes())
+        let empty_string = String::new();
+        let id_bytes = self.id.as_bytes().to_owned();
+        let prev_commit_id_bytes = self
+            .prev_commit_id
+            .as_ref()
+            .unwrap_or(&empty_string)
+            .as_bytes();
+
+        id_bytes
+            .iter()
+            .chain(prev_commit_id_bytes)
             .chain(self.author_id.as_bytes())
             .chain(self.ts.to_rfc3339().as_bytes())
             .chain(self.message.as_bytes())
             .chain(self.patch.as_bytes())
-            .map(|byteref| *byteref)
+            .cloned()
             .collect()
     }
 
     /// Generate ID for current commit (does not change with already present ID or signature)
     fn gen_id(&self) -> String {
-        let commit_empty_id = CommitData {id: "".to_owned(), ..self.clone()};
+        let commit_empty_id = CommitData {
+            id: "".to_owned(),
+            ..self.clone()
+        };
 
         let bytes = commit_empty_id.bytes();
         let digest = digest::digest(ID_DIGEST_ALGO, &bytes);

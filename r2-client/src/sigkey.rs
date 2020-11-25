@@ -1,8 +1,8 @@
 use std::fmt::{self, Debug, Display, Formatter};
 
-use ring::signature::{self, KeyPair, RsaKeyPair, UnparsedPublicKey};
-use ring::rand::SystemRandom;
 use ring::error::Unspecified as RingError;
+use ring::rand::SystemRandom;
+use ring::signature::{self, KeyPair, RsaKeyPair, UnparsedPublicKey};
 
 static SIGN_ALGO: &dyn signature::RsaEncoding = &signature::RSA_PSS_SHA512;
 static SIGN_VERIFY_ALGO: &dyn signature::VerificationAlgorithm =
@@ -17,7 +17,7 @@ fn new_unparsed_public_key<B: AsRef<[u8]>>(pubkey: B) -> UnparsedPublicKey<B> {
 }
 
 pub trait SignatureVerifier {
-	fn verify(&self, message: &[u8], signature: &[u8]) -> Result<(), SigningError>;
+    fn verify(&self, message: &[u8], signature: &[u8]) -> Result<(), SigningError>;
 }
 
 impl<B: AsRef<[u8]>> SignatureVerifier for UnparsedPublicKey<B> {
@@ -49,7 +49,7 @@ impl MaybeSigner for RsaKeyPair {
     }
 }
 
-pub trait SignatureVerifierAndMaybeSigner : SignatureVerifier + MaybeSigner {}
+pub trait SignatureVerifierAndMaybeSigner: SignatureVerifier + MaybeSigner {}
 
 impl SignatureVerifierAndMaybeSigner for RsaKeyPair {}
 
@@ -60,7 +60,9 @@ pub enum GenericSigningKey<B: AsRef<[u8]>> {
 
 impl GenericSigningKey<&str> {
     pub fn from_pkcs8_keypair(keypair: &[u8]) -> Result<Self, ring::error::KeyRejected> {
-        Ok(GenericSigningKey::from_keypair(RsaKeyPair::from_pkcs8(keypair)?))
+        Ok(GenericSigningKey::from_keypair(RsaKeyPair::from_pkcs8(
+            keypair,
+        )?))
     }
 
     pub fn from_keypair(keypair: RsaKeyPair) -> Self {
@@ -82,7 +84,7 @@ impl<B: AsRef<[u8]>> SignatureVerifier for GenericSigningKey<B> {
             PublicKeyOnly(pubkey) => {
                 let pubkey = new_unparsed_public_key(pubkey);
                 SignatureVerifier::verify(&pubkey, message, signature)
-            },
+            }
             KeyPair(keypair) => keypair.verify(message, signature),
         }
     }
@@ -96,7 +98,7 @@ impl<B: AsRef<[u8]>> MaybeSigner for GenericSigningKey<B> {
 
         match self {
             KeyPair(keypair) => MaybeSigner::sign(keypair, message),
-            PublicKeyOnly(_) => Err(SigningError::KeyCannotSign)
+            PublicKeyOnly(_) => Err(SigningError::KeyCannotSign),
         }
     }
 }
