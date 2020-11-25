@@ -55,9 +55,9 @@ message GetMetadataResponse {
 	User owner = 2;
 	Collaborators collaborators = 3;
 	SquashRequest pending_squash = 4;
-	uint64 pending_squash_remaining_votes = 5;
+	int64 squash_vote_tally = 5;
 	RollbackRequest pending_rollback = 6;
-	uint64 pending_rollback_remaining_votes = 7;
+	int64 rollback_vote_tally = 7;
 }
 
 message EditCollaboratorsRequest {
@@ -71,24 +71,28 @@ message EditCollaboratorsRequest {
 message EditCollaboratorsResponse {}
 
 message SquashRequest {
-	string document_id = 1;
-	string from_commit_id = 2;
-	string to_commit_id = 3;
-	repeated string dropped_commit_ids = 4;
+	// true means positive vote, false means negative/cancel vote
+	bool vote = 1;
+	string document_id = 2;
+	string from_commit_id = 3;
+	string to_commit_id = 4;
+	repeated string dropped_commit_ids = 5;
 }
 
 message SquashResponse {
-	uint64 remaining_votes = 1;
+	int64 vote_tally = 1;
 }
 
 message RollbackRequest {
-	string document_id = 1;
-	string target_commit_id = 2;
-	repeated string dropped_commit_ids = 3;
+	// true means positive vote, false means negative/cancel vote
+	bool vote = 1;
+	string document_id = 2;
+	string target_commit_id = 3;
+	repeated string dropped_commit_ids = 4;
 }
 
 message RollbackResponse {
-	uint64 remaining_votes = 1;
+	int64 vote_tally = 1;
 }
 
 service ClientApi {
