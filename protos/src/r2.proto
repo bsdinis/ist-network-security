@@ -37,12 +37,12 @@ message CommitRequest {
 
 message CommitResponse {}
 
-message FetchCommitRequest {
+message GetCommitRequest {
 	string document_id = 1;
 	string commit_id = 2;
 }
 
-message FetchCommitResponse {
+message GetCommitResponse {
 	Commit commit = 1;
 }
 
@@ -99,7 +99,7 @@ service ClientApi {
 	rpc get_metadata(GetMetadataRequest) returns (GetMetadataResponse);
 
 	// Get one commit
-	rpc fetch_commit(FetchCommitRequest) returns (FetchCommitResponse);
+	rpc get_commit(GetCommitRequest) returns (GetCommitResponse);
 
 	// Commit and advance HEAD
 	rpc commit(CommitRequest) returns (CommitResponse);
