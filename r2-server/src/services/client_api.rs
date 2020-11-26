@@ -28,10 +28,10 @@ impl ClientApi for ClientApiService {
         Err(Status::unimplemented("hold up, not yet"))
     }
 
-    async fn fetch_commit(
+    async fn get_commit(
         &self,
-        request: Request<FetchCommitRequest>,
-    ) -> Result<Response<FetchCommitResponse>, Status> {
+        request: Request<GetCommitRequest>,
+    ) -> Result<Response<GetCommitResponse>, Status> {
         eprintln!("not implemented: request was {:#?}", request);
         Err(Status::unimplemented("hold up, not yet"))
     }
