@@ -14,7 +14,7 @@ impl User {
         User {
             id,
             name,
-            key: Box::from(GenericSigningKey::from_pubkey(pubkey)),
+            key: Box::from(GenericSigningKey::from_pubkey_bytes(pubkey)),
             _priv: (),
         }
     }
@@ -40,5 +40,3 @@ impl MaybeSigner for User {
         self.key.sign(message)
     }
 }
-
-impl SignatureVerifierAndMaybeSigner for User {}
