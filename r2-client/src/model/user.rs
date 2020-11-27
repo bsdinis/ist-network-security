@@ -5,7 +5,7 @@ type Error = Box<dyn std::error::Error>; // TODO: use more specific type
 pub struct User {
     pub id: String,
     pub name: String,
-    pub key: Box<dyn SignatureVerifierAndMaybeSigner>,
+    pub key: Box<dyn SignatureVerifierAndMaybeSigner + Sync>,
     _priv: (),
 }
 

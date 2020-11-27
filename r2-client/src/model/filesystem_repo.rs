@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use tokio::fs;
 
-use super::commit::CommitData;
+use super::commit::{UnsafeCommit, Commit};
 use super::repo::{RepoStorage, RepoStorageExclusiveGuard, RepoStorageSharedGuard};
 use super::snapshot::Snapshot;
 
@@ -102,7 +102,7 @@ macro_rules! impl_shared {
     ($typename:ident) => {
         #[tonic::async_trait]
         impl RepoStorageSharedGuard<FilesystemRepoStorage> for $typename {
-            async fn load_commit(&self, commit_id: &str) -> Result<CommitData, Error> {
+            async fn load_commit(&self, commit_id: &str) -> Result<UnsafeCommit, Error> {
                 let commit_file_path = commit_path(&self.0.root, commit_id);
                 let commit_file = fs::read_to_string(commit_file_path).await?;
                 Ok(toml::from_str(&commit_file)?)
@@ -142,7 +142,7 @@ impl_shared!(FilesystemRepoStorageExclusiveGuard);
 
 #[tonic::async_trait]
 impl RepoStorageExclusiveGuard<FilesystemRepoStorage> for FilesystemRepoStorageExclusiveGuard {
-    async fn save_commit(&mut self, commit: &CommitData) -> Result<(), Error> {
+    async fn save_commit(&mut self, commit: &Commit) -> Result<(), Error> {
         let commit_file_path = commit_path(&self.0.root, &commit.id);
 
         fs::DirBuilder::new()

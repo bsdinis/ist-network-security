@@ -1,11 +1,10 @@
 use std::fmt::{self, Display};
 use serde::{Serialize, Deserialize};
-use diffy::{apply, create_patch};
-pub use diffy::Patch;
+use diffy::{apply, create_patch, Patch};
 
 type Error = Box<dyn std::error::Error>; // TODO: use more specific type
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct PatchStr(String);
 
 #[derive(Clone, PartialEq, Debug)]

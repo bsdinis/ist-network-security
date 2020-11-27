@@ -1,4 +1,4 @@
-use super::commit::CommitData;
+use super::commit::{Commit, UnsafeCommit};
 use super::snapshot::Snapshot;
 
 type Error = Box<dyn std::error::Error>; // TODO: use more specific type
@@ -15,7 +15,7 @@ pub trait RepoStorage<T: RepoStorage<T>> {
 #[tonic::async_trait]
 pub trait RepoStorageSharedGuard<T: RepoStorage<T>>: Drop {
     /// Load a persisted commit from repo
-    async fn load_commit(&self, commit_id: &str) -> Result<CommitData, Error>;
+    async fn load_commit(&self, commit_id: &str) -> Result<UnsafeCommit, Error>;
 
     /// Read head reference
     async fn get_head(&self) -> Result<String, Error>;
@@ -32,7 +32,7 @@ pub trait RepoStorageSharedGuard<T: RepoStorage<T>>: Drop {
 #[tonic::async_trait]
 pub trait RepoStorageExclusiveGuard<T: RepoStorage<T>>: RepoStorageSharedGuard<T> {
     /// Persist a commit
-    async fn save_commit(&mut self, c: &CommitData) -> Result<(), Error>;
+    async fn save_commit(&mut self, c: &Commit) -> Result<(), Error>;
 
     /// Set head reference
     async fn set_head(&mut self, commit_id: &str) -> Result<(), Error>;

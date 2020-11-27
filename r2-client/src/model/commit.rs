@@ -1,5 +1,5 @@
-use super::user::User;
 use super::snapshot::PatchStr;
+use super::user::User;
 use crate::sigkey::{MaybeSigner, SignatureVerifier};
 use chrono::{DateTime, Utc};
 use ring::digest;
@@ -7,25 +7,39 @@ use serde::{Deserialize, Serialize};
 
 static ID_DIGEST_ALGO: &digest::Algorithm = &digest::SHA512;
 
-/// Unverified or in progress commit. Can be (de)serialized.
-#[derive(Deserialize, Serialize, Clone)]
-pub struct CommitData {
-    pub id: String,
+/// Unverified or unsigned commit.
+///
+/// It should always be converted to a [Commit] object by verifying
+/// ([`Self::verify()`]) or authoring ([`Self::author()`]) it.
+///
+/// It cannot be serialized, to avoid persisting bad data, but
+/// the serialization format is guaranteed to be compatible with
+/// [Commit] (which can be serialized).
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+pub struct UnsafeCommit {
+    pub id: Option<String>,
 
     pub prev_commit_id: Option<String>,
-    pub author_id: String,
+    pub author_id: Option<String>,
     pub ts: DateTime<Utc>,
     pub message: String,
-    pub patch: String,
 
-    #[serde(flatten)]
     pub patch: PatchStr,
 
-    pub signature: Vec<u8>,
+    pub signature: Option<Vec<u8>>,
+
+    #[serde(skip)]
+    _priv: (),
 }
 
-/// A verified commit. Can be freely used by the application.
-/// For persistence, convert it back to the untrusted `CommitData` struct.
+/// A (just-signed or verified) commit.
+///
+/// Obtained from authoring or verifying an [UnsafeCommit].
+///
+/// It cannot be deserialized (because we'd get possibly invalid signatures,
+/// authors or IDs), but the serialization format is guaranteed to be compatible
+/// with [UnsafeCommit] (which can be deserialized).
+#[derive(Clone, Serialize)]
 pub struct Commit {
     pub id: String,
 
@@ -34,7 +48,6 @@ pub struct Commit {
     pub ts: DateTime<Utc>,
     pub message: String,
 
-    #[serde(flatten)]
     pub patch: PatchStr,
 
     pub signature: Vec<u8>,
@@ -44,65 +57,123 @@ pub struct Commit {
 }
 
 // TODO: use more specific types everywhere
-type CommitVerifyError = Box<dyn std::error::Error>;
-type CommitSignError = Box<dyn std::error::Error>;
+type Error = Box<dyn std::error::Error>;
 
-impl CommitData {
-    /// Finish commit by setting the author and signing it, returning a trustworthy `Commit` struct
-    pub fn author(mut self, author: &User) -> Result<Commit, CommitSignError> {
-        self.author_id = author.id.to_owned();
+impl UnsafeCommit {
+    /// Create new comit from previous one, message and patch.
+    ///
+    /// Timestamp is set to the current system time.
+    /// To obtain an ID, set the author field and sign it convert
+    /// it to a [Commit] with [`Self::author`].
+    pub fn new(prev_commit: Option<&Commit>, message: String, patch: PatchStr) -> Self {
+        UnsafeCommit {
+            id: None,
+            prev_commit_id: prev_commit.map(|c| c.id.clone()),
+            author_id: None,
+            ts: Utc::now(),
+            message,
+            patch,
+            signature: None,
+            _priv: (),
+        }
+    }
+
+    /// Convert to [Commit], setting the author, generating an ID and signing it.
+    ///
+    /// Usage with commits that already have a signature, author or ID will panic
+    /// in debug builds.
+    pub fn author(mut self, author: &User) -> Result<Commit, Error> {
+        debug_assert!(self.id.is_none(), "Authoring commit that already has an ID");
+        debug_assert!(
+            self.author_id.is_none(),
+            "Authoring commit that already has an author"
+        );
+        debug_assert!(
+            self.signature.is_none(),
+            "Authoring commit that already has a signature"
+        );
+
+        self.author_id = Some(author.id.to_owned());
+        self.id = Some(self.gen_id());
 
         let bytes = self.bytes();
-        self.signature = author.sign(&bytes)?;
+        self.signature = Some(author.sign(&bytes)?);
 
         Ok(Commit {
-            id: self.id,
+            id: self.id.unwrap(),
             prev_commit_id: self.prev_commit_id,
-            author_id: self.author_id,
+            author_id: self.author_id.unwrap(),
             ts: self.ts,
             message: self.message,
             patch: self.patch,
-            signature: self.signature,
+            signature: self.signature.unwrap(),
             _priv: (),
         })
     }
 
-    /// Verify commit (loaded from outside), returning a trustworthy `Commit` struct
-    /// Verification amounts to checking that the ID was properly derived from the data, and that the signature is valid.
-    pub fn verify(self, author: &User) -> Result<Commit, CommitVerifyError> {
-        let generated_id = self.gen_id();
-
-        if self.id != generated_id {
-            return Err(format!(
-                "Badly generated commit ID. Expected {}, got {}",
-                generated_id, self.id
-            ))?;
-        }
+    /// Convert to [Commit] after verification, given its author.
+    ///
+    /// - Passing an [User] which is not the commit's author will panic;
+    /// - A commit whose ID does not match the one generated by our
+    ///   algorithm is considered invalid;
+    /// - A valid commit must have a valid signature from its author.
+    pub fn verify(self, author: &User) -> Result<Commit, Error> {
+        let id = self
+            .id
+            .as_deref()
+            .ok_or("Cannot verify commit: missing ID")?;
+        let author_id = self
+            .author_id
+            .as_deref()
+            .ok_or("Cannot verify commit: missing author_id")?;
+        let signature = self
+            .signature
+            .as_deref()
+            .ok_or("Cannot verify commit: missing signature")?;
 
         assert_eq!(
-            self.author_id, author.id,
+            author_id, author.id,
             "Tried to verify signature with wrong key"
         );
 
+        let generated_id = {
+            let mut idless_commit = self.clone();
+            idless_commit.id = None;
+            idless_commit.gen_id()
+        };
+
+        if id != generated_id {
+            return Err(format!(
+                "Badly generated commit ID. Expected {}, got {:?}",
+                generated_id, id
+            ))?;
+        }
+
         let bytes = self.bytes();
-        author.verify(&bytes, &self.signature)?;
+        author.verify(&bytes, &signature)?;
 
         Ok(Commit {
-            id: self.id,
+            id: self.id.unwrap(),
             prev_commit_id: self.prev_commit_id,
-            author_id: self.author_id,
+            author_id: self.author_id.unwrap(),
             ts: self.ts,
             message: self.message,
             patch: self.patch,
-            signature: self.signature,
+            signature: self.signature.unwrap(),
             _priv: (),
         })
     }
 
-    /// Create byte array with all commit data for signing (or ID generation when the self.id == "")
+    /// Create byte array with all commit data for signing (or ID generation when self.id is None)
+    /// This method makes no assumptions on what fields are or **need** to be present.
     fn bytes(&self) -> Vec<u8> {
         let empty_string = String::new();
-        let id_bytes = self.id.as_bytes().to_owned();
+        let id_bytes = self
+            .id
+            .as_ref()
+            .unwrap_or(&String::new())
+            .as_bytes()
+            .to_owned();
         let prev_commit_id_bytes = self
             .prev_commit_id
             .as_ref()
@@ -112,7 +183,7 @@ impl CommitData {
         id_bytes
             .iter()
             .chain(prev_commit_id_bytes)
-            .chain(self.author_id.as_bytes())
+            .chain(self.author_id.as_ref().unwrap().as_bytes())
             .chain(self.ts.to_rfc3339().as_bytes())
             .chain(self.message.as_bytes())
             .chain(self.patch.as_bytes())
@@ -122,28 +193,33 @@ impl CommitData {
 
     /// Generate ID for current commit (does not change with already present ID or signature)
     fn gen_id(&self) -> String {
-        let commit_empty_id = CommitData {
-            id: "".to_owned(),
-            ..self.clone()
-        };
+        debug_assert!(
+            self.id.is_none(),
+            "CommitData::gen_id() used with a non empty ID"
+        );
+        debug_assert!(
+            self.author_id.is_some(),
+            "CommitData::gen_id() used with empty author_id"
+        );
 
-        let bytes = commit_empty_id.bytes();
+        let bytes = self.bytes();
         let digest = digest::digest(ID_DIGEST_ALGO, &bytes);
 
         format!("{:x?}", digest)
     }
 }
 
-impl From<Commit> for CommitData {
+impl From<Commit> for UnsafeCommit {
     fn from(c: Commit) -> Self {
-        CommitData {
-            id: c.id,
+        UnsafeCommit {
+            id: Some(c.id),
             prev_commit_id: c.prev_commit_id,
-            author_id: c.author_id,
+            author_id: Some(c.author_id),
             ts: c.ts,
             message: c.message,
             patch: c.patch,
-            signature: c.signature,
+            signature: Some(c.signature),
+            _priv: (),
         }
     }
 }
