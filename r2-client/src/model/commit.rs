@@ -223,3 +223,152 @@ impl From<Commit> for UnsafeCommit {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use toml;
+
+    use super::*;
+    use crate::test_utils::user::*;
+    use crate::test_utils::commit::*;
+
+    #[test]
+    fn compatible_serialization() {
+        let ucommit0_orig: UnsafeCommit = COMMIT_0.to_owned().into();
+        let ucommit1_orig: UnsafeCommit = COMMIT_1.to_owned().into();
+
+        let commit0_str = toml::to_string(&*COMMIT_0).unwrap();
+        println!("{}", commit0_str);
+        let commit1_str = toml::to_string(&*COMMIT_1).unwrap();
+
+        let ucommit0: UnsafeCommit = toml::from_str(&commit0_str).unwrap();
+        let ucommit1: UnsafeCommit = toml::from_str(&commit1_str).unwrap();
+
+        assert_eq!(ucommit0_orig, ucommit0, "Incompatible serialization format (prev_commit_id=None)");
+        assert_eq!(ucommit1_orig, ucommit1, "Incompatible serialization format (prev_commit_id!=None)");
+    }
+
+    #[test]
+    fn verify_ok() {
+        // de-verify
+        let ucommit0: UnsafeCommit = COMMIT_0.to_owned().into();
+        let ucommit1: UnsafeCommit = COMMIT_1.to_owned().into();
+
+        let commit0 = ucommit0.clone().verify(&*USER_A).unwrap();
+        assert_eq!(ucommit0.id.unwrap(), commit0.id);
+        assert_eq!(ucommit0.author_id.unwrap(), commit0.author_id);
+        assert_eq!(ucommit0.ts, commit0.ts);
+        assert_eq!(ucommit0.message, commit0.message);
+        assert_eq!(ucommit0.patch, commit0.patch);
+        assert_eq!(ucommit0.signature.unwrap(), commit0.signature);
+
+        let commit1 = ucommit1.clone().verify(&*USER_B).unwrap();
+        assert_eq!(ucommit1.id.unwrap(), commit1.id);
+        assert_eq!(ucommit1.author_id.unwrap(), commit1.author_id);
+        assert_eq!(ucommit1.ts, commit1.ts);
+        assert_eq!(ucommit1.message, commit1.message);
+        assert_eq!(ucommit1.patch, commit1.patch);
+        assert_eq!(ucommit1.signature.unwrap(), commit1.signature);
+    }
+
+    #[test]
+    fn author_ok() {
+        let commit0 = UNAUTHORED_COMMIT_0.to_owned().author(&*USER_B).unwrap();
+        assert_eq!(commit0.author_id, USER_B.id);
+        assert_eq!(commit0.ts, UNAUTHORED_COMMIT_0.ts);
+        assert_eq!(commit0.message, UNAUTHORED_COMMIT_0.message);
+        assert_eq!(commit0.patch, UNAUTHORED_COMMIT_0.patch);
+
+        let commit1 = UNAUTHORED_COMMIT_1.to_owned().author(&*USER_A).unwrap();
+        assert_eq!(commit1.author_id, USER_A.id);
+        assert_eq!(commit1.ts, UNAUTHORED_COMMIT_1.ts);
+        assert_eq!(commit1.message, UNAUTHORED_COMMIT_1.message);
+        assert_eq!(commit1.patch, UNAUTHORED_COMMIT_1.patch);
+    }
+
+    mod swap_field_fail_sig_tests {
+        use std::mem;
+        use crate::model::commit::UnsafeCommit;
+        use crate::test_utils::commit::*;
+        use crate::test_utils::user::*;
+
+        macro_rules! test {
+            ($field:ident) => {
+                #[test]
+                fn $field() {
+                    let mut ucommit0: UnsafeCommit = COMMIT_0.to_owned().into();
+                    let mut ucommit1: UnsafeCommit = COMMIT_1.to_owned().into();
+                    mem::swap(&mut ucommit0.$field, &mut ucommit1.$field);
+
+                    assert!(ucommit0.verify(&*USER_A).is_err(), "verified commit with bad signature");
+                    assert!(ucommit1.verify(&*USER_B).is_err(), "verified commit with bad signature");
+                }
+            };
+        }
+
+        test!(id);
+        test!(prev_commit_id);
+        //test!(author_id); // this is an outright panic
+        test!(ts);
+        test!(message);
+        test!(patch);
+        test!(signature);
+    }
+
+    #[test]
+    #[should_panic(expected = "Tried to verify signature with wrong key")]
+    fn verify_panic_author_mismatch() {
+        let ucommit0: UnsafeCommit = COMMIT_0.to_owned().into();
+        let ucommit1: UnsafeCommit = COMMIT_1.to_owned().into();
+
+        let _ = ucommit0.verify(&*USER_B); // should be B
+        let _ = ucommit1.verify(&*USER_A); // should be A
+
+        panic!("failed for the wrong reason. should have panicked before");
+    }
+
+    #[test]
+    fn verify_err_missing_id() {
+        let mut ucommit0: UnsafeCommit = COMMIT_0.to_owned().into();
+        let mut ucommit1: UnsafeCommit = COMMIT_1.to_owned().into();
+        ucommit0.id = None;
+        ucommit1.id = None;
+
+        assert!(ucommit0.verify(&*USER_A).is_err(), "verified ID-less commit");
+        assert!(ucommit1.verify(&*USER_B).is_err(), "verified ID-less commit");
+    }
+
+    #[test]
+    fn verify_err_missing_author() {
+        let mut ucommit0: UnsafeCommit = COMMIT_0.to_owned().into();
+        let mut ucommit1: UnsafeCommit = COMMIT_1.to_owned().into();
+        ucommit0.author_id = None;
+        ucommit1.author_id = None;
+
+        assert!(ucommit0.verify(&*USER_A).is_err(), "verified author-less commit");
+        assert!(ucommit1.verify(&*USER_B).is_err(), "verified author-less commit");
+    }
+
+    #[test]
+    fn verify_err_missing_signature() {
+        let mut ucommit0: UnsafeCommit = COMMIT_0.to_owned().into();
+        let mut ucommit1: UnsafeCommit = COMMIT_1.to_owned().into();
+        ucommit0.signature = None;
+        ucommit1.signature = None;
+
+        assert!(ucommit0.verify(&*USER_A).is_err(), "verified signature-less commit");
+        assert!(ucommit1.verify(&*USER_B).is_err(), "verified signature-less commit");
+    }
+
+    #[test]
+    fn verify_err_empty_signature() {
+        let mut ucommit0: UnsafeCommit = COMMIT_0.to_owned().into();
+        let mut ucommit1: UnsafeCommit = COMMIT_1.to_owned().into();
+        ucommit0.signature = Some(vec![]);
+        ucommit1.signature = Some(vec![]);
+
+        assert!(ucommit0.verify(&*USER_A).is_err(), "verified signature-less commit");
+        assert!(ucommit1.verify(&*USER_B).is_err(), "verified signature-less commit");
+    }
+
+}
