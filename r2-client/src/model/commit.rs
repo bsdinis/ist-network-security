@@ -1,4 +1,5 @@
 use super::user::User;
+use super::snapshot::PatchStr;
 use crate::sigkey::{MaybeSigner, SignatureVerifier};
 use chrono::{DateTime, Utc};
 use ring::digest;
@@ -17,6 +18,9 @@ pub struct CommitData {
     pub message: String,
     pub patch: String,
 
+    #[serde(flatten)]
+    pub patch: PatchStr,
+
     pub signature: Vec<u8>,
 }
 
@@ -29,9 +33,13 @@ pub struct Commit {
     pub author_id: String,
     pub ts: DateTime<Utc>,
     pub message: String,
-    pub patch: String,
+
+    #[serde(flatten)]
+    pub patch: PatchStr,
 
     pub signature: Vec<u8>,
+
+    #[serde(skip)]
     _priv: (),
 }
 
