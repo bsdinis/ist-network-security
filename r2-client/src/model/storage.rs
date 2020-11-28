@@ -52,7 +52,7 @@ pub trait StorageExclusiveGuard<T: Storage<T>>: StorageSharedGuard<T> {
 #[cfg(test)]
 #[macro_use]
 pub mod test {
-    use super::{Storage, StorageSharedGuard, StorageExclusiveGuard};
+    use super::{Storage, StorageExclusiveGuard, StorageSharedGuard};
     use crate::model::snapshot::Snapshot;
     use crate::test_utils::commit::*;
     use std::mem;
@@ -71,76 +71,130 @@ pub mod test {
         }
 
         pub fn locks(&self) {
-            let shared_lock = self.0
-                .try_shared()
-                .expect("can't lock storage (shared)");
-            let shared_lock2 = self.0
+            let shared_lock = self.0.try_shared().expect("can't lock storage (shared)");
+            let shared_lock2 = self
+                .0
                 .try_shared()
                 .expect("can't lock storage (shared), 2nd lock");
 
-            assert!(self.0.try_exclusive().is_err(), "obtained exclusive lock while shared lock was taken");
+            assert!(
+                self.0.try_exclusive().is_err(),
+                "obtained exclusive lock while shared lock was taken"
+            );
 
             mem::drop(shared_lock);
             shared_lock2.unlock();
 
-            let exclusive_lock = self.0.try_exclusive()
+            let exclusive_lock = self
+                .0
+                .try_exclusive()
                 .expect("can't lock storage (exclusive)");
 
-            assert!(self.0.try_exclusive().is_err(), "obtained exclusive lock while exclusive lock was taken");
-            assert!(self.0.try_shared().is_err(), "obtained shared lock while exclusive lock was taken");
+            assert!(
+                self.0.try_exclusive().is_err(),
+                "obtained exclusive lock while exclusive lock was taken"
+            );
+            assert!(
+                self.0.try_shared().is_err(),
+                "obtained shared lock while exclusive lock was taken"
+            );
 
             mem::drop(exclusive_lock);
 
-            self.0.try_exclusive()
+            self.0
+                .try_exclusive()
                 .expect("can't lock storage (exclusive) after exiting exclusive lock")
                 .unlock();
 
-            self.0.try_shared()
+            self.0
+                .try_shared()
                 .expect("can't lock storage (exclusive) after exiting exclusive lock");
         }
 
         pub async fn save_load_commits(&self) {
-            let mut s = self.0.try_exclusive().expect("can't lock storage (exclusive)");
+            let mut s = self
+                .0
+                .try_exclusive()
+                .expect("can't lock storage (exclusive)");
             assert!(s.load_commit(&COMMIT_0.id).await.unwrap().is_none());
             assert!(s.load_commit(&COMMIT_1.id).await.unwrap().is_none());
 
             s.save_commit(&*COMMIT_0).await.expect("can't save commit");
             s.save_commit(&*COMMIT_1).await.expect("can't save commit");
 
-            assert_eq!(COMMIT_0.to_owned(), s.load_commit(&COMMIT_0.id).await.unwrap().unwrap(), "storage mangled commit");
-            assert_eq!(COMMIT_1.to_owned(), s.load_commit(&COMMIT_1.id).await.unwrap().unwrap(), "storage mangled commit");
+            assert_eq!(
+                COMMIT_0.to_owned(),
+                s.load_commit(&COMMIT_0.id).await.unwrap().unwrap(),
+                "storage mangled commit"
+            );
+            assert_eq!(
+                COMMIT_1.to_owned(),
+                s.load_commit(&COMMIT_1.id).await.unwrap().unwrap(),
+                "storage mangled commit"
+            );
         }
 
         pub async fn save_load_head(&self) {
-            let mut s = self.0.try_exclusive().expect("can't lock storage (exclusive)");
+            let mut s = self
+                .0
+                .try_exclusive()
+                .expect("can't lock storage (exclusive)");
             assert!(s.load_head().await.is_err());
 
             s.save_head(&COMMIT_0.id).await.expect("can't save head");
 
-            assert_eq!(COMMIT_0.id, s.load_head().await.unwrap(), "storage mangled head");
+            assert_eq!(
+                COMMIT_0.id,
+                s.load_head().await.unwrap(),
+                "storage mangled head"
+            );
         }
 
         pub async fn save_load_remote_head(&self) {
-            let mut s = self.0.try_exclusive().expect("can't lock storage (exclusive)");
+            let mut s = self
+                .0
+                .try_exclusive()
+                .expect("can't lock storage (exclusive)");
             assert!(s.load_remote_head().await.is_err());
 
-            s.save_remote_head(&COMMIT_0.id).await.expect("can't save remote head");
+            s.save_remote_head(&COMMIT_0.id)
+                .await
+                .expect("can't save remote head");
 
-            assert_eq!(COMMIT_0.id, s.load_remote_head().await.unwrap(), "storage mangled remote head");
+            assert_eq!(
+                COMMIT_0.id,
+                s.load_remote_head().await.unwrap(),
+                "storage mangled remote head"
+            );
         }
 
         pub async fn save_load_current_snapshot(&self) {
-            let mut s = self.0.try_exclusive().expect("can't lock storage (exclusive)");
+            let mut s = self
+                .0
+                .try_exclusive()
+                .expect("can't lock storage (exclusive)");
 
             let content: Snapshot = "oh my, this is a beautiful file".into();
-            s.save_current_snapshot(&content).await.expect("can't save snapshot");
+            s.save_current_snapshot(&content)
+                .await
+                .expect("can't save snapshot");
 
-            assert_eq!(content, s.load_current_snapshot().await.unwrap(), "storage didn't write file properly");
+            assert_eq!(
+                content,
+                s.load_current_snapshot().await.unwrap(),
+                "storage didn't write file properly"
+            );
 
             let content: Snapshot = "oh my, this is an even more beautiful file".into();
-            s.save_current_snapshot(&content).await.expect("can't save snapshot");
+            s.save_current_snapshot(&content)
+                .await
+                .expect("can't save snapshot");
 
-            assert_eq!(content, s.load_current_snapshot().await.unwrap(), "storage didn't write file properly");
+            assert_eq!(
+                content,
+                s.load_current_snapshot().await.unwrap(),
+                "storage didn't write file properly"
+            );
         }
     }
 
@@ -168,13 +222,14 @@ pub mod test {
                     $ephemeral_storage_provider(move |s| {
                         StorageTester::new(s).locks();
                         std::future::ready(())
-                    }).await
+                    })
+                    .await
                 }
 
                 macro_rules! test_async_method {
                     ($test_name:ident) => {
                         mod $test_name {
-                            use crate::model::storage::{Storage, test::StorageTester};
+                            use crate::model::storage::{test::StorageTester, Storage};
 
                             pub async fn aux<S: Storage<S>>(s: S) {
                                 let tester = StorageTester::new(s);

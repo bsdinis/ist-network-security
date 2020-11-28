@@ -1,6 +1,6 @@
-use std::fmt::{self, Display};
-use serde::{Serialize, Deserialize};
 use diffy::{apply, create_patch, Patch};
+use serde::{Deserialize, Serialize};
+use std::fmt::{self, Display};
 
 type Error = Box<dyn std::error::Error>; // TODO: use more specific type
 
@@ -60,8 +60,7 @@ impl AsRef<[u8]> for Snapshot {
 
 impl Display for PatchStr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let patch = Patch::from_str(&self.0)
-            .map_err(|_| fmt::Error)?;
+        let patch = Patch::from_str(&self.0).map_err(|_| fmt::Error)?;
         Display::fmt(&patch, f)
     }
 }

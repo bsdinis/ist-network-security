@@ -1,13 +1,14 @@
 #[macro_use]
 extern crate lazy_static;
 
-mod sigkey;
 mod model;
-#[cfg(test)] mod test_utils;
+mod sigkey;
+#[cfg(test)]
+mod test_utils;
 
-pub use model::storage::{Storage, StorageSharedGuard, StorageExclusiveGuard};
-pub use model::snapshot::{Snapshot, PatchStr};
-pub use model::commit::{Commit, UnverifiedCommit, CommitBuilder};
+pub use model::commit::{Commit, CommitBuilder, UnverifiedCommit};
+pub use model::snapshot::{PatchStr, Snapshot};
+pub use model::storage::{Storage, StorageExclusiveGuard, StorageSharedGuard};
 pub use model::user::User;
 
 pub use model::fs_storage::FilesystemStorage;
@@ -43,9 +44,7 @@ pub enum ResetHardness {
 
 impl<S: Storage<S>> File<S> {
     pub fn new(storage: S) -> Self {
-        File {
-            storage,
-        }
+        File { storage }
     }
 
     /// Compute the patch that transforms revision a into revision b
@@ -59,7 +58,13 @@ impl<S: Storage<S>> File<S> {
         let mut storage = self.storage.try_exclusive()?;
 
         let commit = {
-            let patch = self.diff_locked(&storage, RichRevisionId::RelativeHead(0), RichRevisionId::Uncommitted).await?;
+            let patch = self
+                .diff_locked(
+                    &storage,
+                    RichRevisionId::RelativeHead(0),
+                    RichRevisionId::Uncommitted,
+                )
+                .await?;
 
             let ucommit = CommitBuilder::from_head(&storage, message, patch).await?;
             let author = self.get_own_user(&storage).await?;
@@ -81,10 +86,12 @@ impl<S: Storage<S>> File<S> {
             CommitId(id) => {
                 // verify that commit id is in the current graph
                 let head = storage.load_head().await?;
-                let _ = self.walk_back_from_commit(&storage, &head, Some(&id)).await?;
+                let _ = self
+                    .walk_back_from_commit(&storage, &head, Some(&id))
+                    .await?;
 
                 id
-            },
+            }
             RelativeHead(n) => self.parse_head_relative_revision(&storage, n).await?,
             Uncommitted => return Ok(()),
         };
@@ -101,7 +108,11 @@ impl<S: Storage<S>> File<S> {
 
     /// Initiate or vote for a rollback
     /// Analogous to a global [`Self::reset()`]
-    pub async fn rollback(&self, _rev: RichRevisionId, _softness: ResetHardness) -> Result<(), Error> {
+    pub async fn rollback(
+        &self,
+        _rev: RichRevisionId,
+        _softness: ResetHardness,
+    ) -> Result<(), Error> {
         unimplemented!()
     }
 
@@ -122,7 +133,12 @@ impl<S: Storage<S>> File<S> {
         unimplemented!()
     }
 
-    async fn diff_locked(&self, storage: &dyn StorageSharedGuard<S>, a: RichRevisionId, b: RichRevisionId) -> Result<PatchStr, Error> {
+    async fn diff_locked(
+        &self,
+        storage: &dyn StorageSharedGuard<S>,
+        a: RichRevisionId,
+        b: RichRevisionId,
+    ) -> Result<PatchStr, Error> {
         let snapshot_a = self.snapshot(storage, a).await?;
         let snapshot_b = self.snapshot(storage, b).await?;
 
@@ -130,7 +146,11 @@ impl<S: Storage<S>> File<S> {
     }
 
     /// Get snapshot of a revision
-    async fn snapshot(&self, storage: &dyn StorageSharedGuard<S>, r: RichRevisionId) -> Result<Snapshot, Error> {
+    async fn snapshot(
+        &self,
+        storage: &dyn StorageSharedGuard<S>,
+        r: RichRevisionId,
+    ) -> Result<Snapshot, Error> {
         use RichRevisionId::*;
         let commit_id = match r {
             Uncommitted => return Ok(storage.load_current_snapshot().await?),
@@ -139,7 +159,9 @@ impl<S: Storage<S>> File<S> {
         };
 
         // build snapshot from commit history
-        let snapshot = self.walk_back_from_commit(storage, &commit_id, None).await?
+        let snapshot = self
+            .walk_back_from_commit(storage, &commit_id, None)
+            .await?
             .drain(..)
             .rev()
             .map(|c| c.patch)
@@ -149,16 +171,25 @@ impl<S: Storage<S>> File<S> {
     }
 
     /// Given a commit ID, return a vector containing it and all
-    async fn walk_back_from_commit(&self, storage: &dyn StorageSharedGuard<S>, commit_id: &str, until: Option<&str>) -> Result<Vec<Commit>, Error> {
+    async fn walk_back_from_commit(
+        &self,
+        storage: &dyn StorageSharedGuard<S>,
+        commit_id: &str,
+        until: Option<&str>,
+    ) -> Result<Vec<Commit>, Error> {
         let mut res = Vec::new();
 
-        let commit = storage.load_commit(commit_id).await?
+        let commit = storage
+            .load_commit(commit_id)
+            .await?
             .ok_or(format!("Commit {} not found", commit_id))?;
         let mut prev_id = commit.prev_commit_id.clone();
         res.push(commit);
 
         while let Some(ref id) = prev_id {
-            let commit = storage.load_commit(id).await?
+            let commit = storage
+                .load_commit(id)
+                .await?
                 .ok_or(format!("Commit {} not found", id))?;
 
             prev_id = match until {
@@ -173,10 +204,16 @@ impl<S: Storage<S>> File<S> {
     }
 
     /// Get commit id corresponding to a HEAD~n reference
-    async fn parse_head_relative_revision(&self, storage: &dyn StorageSharedGuard<S>, n: usize) -> Result<String, Error> {
+    async fn parse_head_relative_revision(
+        &self,
+        storage: &dyn StorageSharedGuard<S>,
+        n: usize,
+    ) -> Result<String, Error> {
         let mut commit_id = storage.load_head().await?;
         for _ in 0..n {
-            commit_id = storage.load_commit(&commit_id).await?
+            commit_id = storage
+                .load_commit(&commit_id)
+                .await?
                 .ok_or(format!("Commit {} not found", commit_id))?
                 .prev_commit_id
                 .ok_or(format!("Unknown revision: HEAD~{}", n))?;

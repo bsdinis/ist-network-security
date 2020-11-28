@@ -1,6 +1,6 @@
 use super::snapshot::PatchStr;
-use super::user::User;
 use super::storage::{Storage, StorageSharedGuard};
+use super::user::User;
 use crate::sigkey::{MaybeSigner, SignatureVerifier};
 use chrono::{DateTime, Utc};
 use ring::digest;
@@ -130,7 +130,8 @@ impl UnverifiedCommit {
             empty_string.as_bytes()
         };
 
-        id_bytes.iter()
+        id_bytes
+            .iter()
             .chain(prev_commit_id_bytes)
             .chain(self.author_id.as_bytes())
             .chain(self.ts.to_rfc3339().as_bytes())
@@ -152,17 +153,33 @@ impl UnverifiedCommit {
 impl CommitBuilder {
     pub fn root_commit(message: String, patch: PatchStr) -> Self {
         let prev_commit_id = None;
-        CommitBuilder { prev_commit_id, message, patch }
+        CommitBuilder {
+            prev_commit_id,
+            message,
+            patch,
+        }
     }
 
     pub fn from_commit(prev_commit: &Commit, message: String, patch: PatchStr) -> Self {
         let prev_commit_id = Some(prev_commit.id.clone());
-        CommitBuilder { prev_commit_id, message, patch }
+        CommitBuilder {
+            prev_commit_id,
+            message,
+            patch,
+        }
     }
 
-    pub async fn from_head<T: Storage<T>>(storage: &dyn StorageSharedGuard<T>, message: String, patch: PatchStr) -> Result<Self, Error> {
+    pub async fn from_head<T: Storage<T>>(
+        storage: &dyn StorageSharedGuard<T>,
+        message: String,
+        patch: PatchStr,
+    ) -> Result<Self, Error> {
         let prev_commit_id = Some(storage.load_head().await?);
-        Ok(CommitBuilder { prev_commit_id, message, patch })
+        Ok(CommitBuilder {
+            prev_commit_id,
+            message,
+            patch,
+        })
     }
 
     /// Convert to [Commit], setting the author, generating an ID and signing it.
@@ -211,8 +228,8 @@ mod test {
     use toml;
 
     use super::*;
-    use crate::test_utils::user::*;
     use crate::test_utils::commit::*;
+    use crate::test_utils::user::*;
 
     #[test]
     fn compatible_serialization() {
@@ -226,8 +243,14 @@ mod test {
         let ucommit0: UnverifiedCommit = toml::from_str(&commit0_str).unwrap();
         let ucommit1: UnverifiedCommit = toml::from_str(&commit1_str).unwrap();
 
-        assert_eq!(ucommit0_orig, ucommit0, "Incompatible serialization format (prev_commit_id=None)");
-        assert_eq!(ucommit1_orig, ucommit1, "Incompatible serialization format (prev_commit_id!=None)");
+        assert_eq!(
+            ucommit0_orig, ucommit0,
+            "Incompatible serialization format (prev_commit_id=None)"
+        );
+        assert_eq!(
+            ucommit1_orig, ucommit1,
+            "Incompatible serialization format (prev_commit_id!=None)"
+        );
     }
 
     #[test]
@@ -236,9 +259,7 @@ mod test {
         let ucommit0: UnverifiedCommit = COMMIT_0.to_owned().into();
         let ucommit1: UnverifiedCommit = COMMIT_1.to_owned().into();
 
-        let commit0 = unsafe {
-            ucommit0.clone().verify_unchecked()
-        };
+        let commit0 = unsafe { ucommit0.clone().verify_unchecked() };
         assert_eq!(ucommit0.id, commit0.id);
         assert_eq!(ucommit0.author_id, commit0.author_id);
         assert_eq!(ucommit0.ts, commit0.ts);
@@ -246,9 +267,7 @@ mod test {
         assert_eq!(ucommit0.patch, commit0.patch);
         assert_eq!(ucommit0.signature, commit0.signature);
 
-        let commit1 = unsafe {
-            ucommit1.clone().verify_unchecked()
-        };
+        let commit1 = unsafe { ucommit1.clone().verify_unchecked() };
         assert_eq!(ucommit1.id, commit1.id);
         assert_eq!(ucommit1.author_id, commit1.author_id);
         assert_eq!(ucommit1.ts, commit1.ts);
@@ -290,9 +309,10 @@ mod test {
         assert_eq!(commit0.message, COMMIT_0.message);
         assert_eq!(commit0.patch, COMMIT_0.patch);
 
-        let commit1 = CommitBuilder::from_commit(&COMMIT_0, COMMIT_1.message.clone(), COMMIT_1.patch.clone())
-            .author(&*USER_A)
-            .unwrap();
+        let commit1 =
+            CommitBuilder::from_commit(&COMMIT_0, COMMIT_1.message.clone(), COMMIT_1.patch.clone())
+                .author(&*USER_A)
+                .unwrap();
         assert_eq!(commit1.prev_commit_id, Some(COMMIT_0.id.clone()));
         assert_eq!(commit1.author_id, USER_A.id);
         assert_eq!(commit1.message, COMMIT_1.message);
@@ -300,10 +320,10 @@ mod test {
     }
 
     mod swap_field_fail_sig_tests {
-        use std::mem;
         use crate::model::commit::UnverifiedCommit;
         use crate::test_utils::commit::*;
         use crate::test_utils::user::*;
+        use std::mem;
 
         macro_rules! test {
             ($field:ident) => {
@@ -313,8 +333,14 @@ mod test {
                     let mut ucommit1: UnverifiedCommit = COMMIT_1.to_owned().into();
                     mem::swap(&mut ucommit0.$field, &mut ucommit1.$field);
 
-                    assert!(ucommit0.verify(&*USER_A).is_err(), "verified commit with bad signature");
-                    assert!(ucommit1.verify(&*USER_B).is_err(), "verified commit with bad signature");
+                    assert!(
+                        ucommit0.verify(&*USER_A).is_err(),
+                        "verified commit with bad signature"
+                    );
+                    assert!(
+                        ucommit1.verify(&*USER_B).is_err(),
+                        "verified commit with bad signature"
+                    );
                 }
             };
         }
@@ -347,8 +373,13 @@ mod test {
         ucommit0.signature = vec![];
         ucommit1.signature = vec![];
 
-        assert!(ucommit0.verify(&*USER_A).is_err(), "verified signature-less commit");
-        assert!(ucommit1.verify(&*USER_B).is_err(), "verified signature-less commit");
+        assert!(
+            ucommit0.verify(&*USER_A).is_err(),
+            "verified signature-less commit"
+        );
+        assert!(
+            ucommit1.verify(&*USER_B).is_err(),
+            "verified signature-less commit"
+        );
     }
-
 }

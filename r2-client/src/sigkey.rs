@@ -2,7 +2,7 @@ use std::fmt::{self, Debug, Display, Formatter};
 
 use ring::error::Unspecified as RingError;
 use ring::rand::SystemRandom;
-use ring::signature::{self, KeyPair, RsaKeyPair, UnparsedPublicKey, RsaSubjectPublicKey};
+use ring::signature::{self, KeyPair, RsaKeyPair, RsaSubjectPublicKey, UnparsedPublicKey};
 
 pub static SIGN_ALGO: &dyn signature::RsaEncoding = &signature::RSA_PSS_SHA512;
 pub static SIGN_VERIFY_ALGO: &dyn signature::VerificationAlgorithm =
@@ -25,7 +25,6 @@ pub trait MaybeSigner {
 
 pub trait SignatureVerifierAndMaybeSigner: SignatureVerifier + MaybeSigner {}
 impl<T: SignatureVerifier + MaybeSigner> SignatureVerifierAndMaybeSigner for T {}
-
 
 pub enum GenericSigningKey<B: AsRef<[u8]>> {
     PublicKeyOnly(UnparsedPublicKey<B>),
@@ -53,7 +52,6 @@ impl<B: AsRef<[u8]>> GenericSigningKey<B> {
         GenericSigningKey::PublicKeyOnly(pubkey)
     }
 }
-
 
 #[derive(Debug, PartialEq)]
 pub enum SigningError {
@@ -132,9 +130,9 @@ impl MaybeSigner for RsaKeyPair {
 
 #[cfg(test)]
 mod test {
-    use super::{SignatureVerifier, MaybeSigner};
-    use super::SigningError;
     use super::GenericSigningKey;
+    use super::SigningError;
+    use super::{MaybeSigner, SignatureVerifier};
 
     use crate::test_utils::signature_keys::*;
 
@@ -144,7 +142,10 @@ mod test {
         let pubkey = GenericSigningKey::PublicKeyOnly(RSA_PUBKEY_A.clone());
         let res = pubkey.sign(&message);
 
-        assert!(res.is_err(), "We did the impossible: we signed data with a public key");
+        assert!(
+            res.is_err(),
+            "We did the impossible: we signed data with a public key"
+        );
         assert_eq!(res.unwrap_err(), SigningError::KeyCannotSign);
     }
 
@@ -156,11 +157,16 @@ mod test {
         let pubkey = GenericSigningKey::from_pubkey_bytes(&*RAW_RSA_PUBKEY_A);
 
         let message: Vec<u8> = vec![42; 4096]; // 4KiB of data, gotta be big enough to require hashing
-        let signature = keypair.sign(&message)
-            .expect("Signing is broken");
+        let signature = keypair.sign(&message).expect("Signing is broken");
 
-        assert!(keypair.verify(&message, &signature).is_ok(), "Good signature was considered bad");
-        assert!(pubkey.verify(&message, &signature).is_ok(), "Good signature was considered bad");
+        assert!(
+            keypair.verify(&message, &signature).is_ok(),
+            "Good signature was considered bad"
+        );
+        assert!(
+            pubkey.verify(&message, &signature).is_ok(),
+            "Good signature was considered bad"
+        );
     }
 
     #[test]
@@ -173,11 +179,16 @@ mod test {
         let pubkey_a = GenericSigningKey::from_pubkey_bytes(&*RAW_RSA_PUBKEY_A);
 
         let message: Vec<u8> = vec![42; 4096]; // 4KiB of data, gotta be big enough to require hashing
-        let signature_b = keypair_b.sign(&message)
-            .expect("Signing is broken");
+        let signature_b = keypair_b.sign(&message).expect("Signing is broken");
 
-        assert!(keypair_a.verify(&message, &signature_b).is_err(), "Bad signature was considered ok");
-        assert!(pubkey_a.verify(&message, &signature_b).is_err(), "Bad signature was considered ok");
+        assert!(
+            keypair_a.verify(&message, &signature_b).is_err(),
+            "Bad signature was considered ok"
+        );
+        assert!(
+            pubkey_a.verify(&message, &signature_b).is_err(),
+            "Bad signature was considered ok"
+        );
     }
 
     #[test]
@@ -188,13 +199,18 @@ mod test {
         let pubkey = GenericSigningKey::from_pubkey_bytes(&*RAW_RSA_PUBKEY_A);
 
         let message_a: Vec<u8> = vec![42; 4096]; // 4KiB of data, gotta be big enough to require hashing
-        let signature_a = keypair.sign(&message_a)
-            .expect("Signing is broken");
+        let signature_a = keypair.sign(&message_a).expect("Signing is broken");
 
         let message_b = vec![3; 4096];
         assert_ne!(message_a, message_b, "fix your test");
 
-        assert!(keypair.verify(&message_b, &signature_a).is_err(), "Bad signature was considered ok");
-        assert!(pubkey.verify(&message_b, &signature_a).is_err(), "Bad signature was considered ok");
+        assert!(
+            keypair.verify(&message_b, &signature_a).is_err(),
+            "Bad signature was considered ok"
+        );
+        assert!(
+            pubkey.verify(&message_b, &signature_a).is_err(),
+            "Bad signature was considered ok"
+        );
     }
 }

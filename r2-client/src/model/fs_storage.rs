@@ -3,9 +3,9 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use tokio::fs;
 
-use super::commit::{UnverifiedCommit, Commit};
-use super::storage::{Storage, StorageExclusiveGuard, StorageSharedGuard};
+use super::commit::{Commit, UnverifiedCommit};
 use super::snapshot::Snapshot;
+use super::storage::{Storage, StorageExclusiveGuard, StorageSharedGuard};
 
 type Error = Box<dyn std::error::Error>; // TODO: use more specific type
 
@@ -60,10 +60,7 @@ impl FilesystemStorage {
             .recursive(true) // to not error when dir already exists
             .create(&root)?;
 
-        Ok(FilesystemStorage {
-            file_path,
-            root,
-        })
+        Ok(FilesystemStorage { file_path, root })
     }
 }
 
@@ -79,7 +76,6 @@ impl Storage<FilesystemStorage> for FilesystemStorage {
         FilesystemStorageExclusiveGuard::new(&self)
     }
 }
-
 
 fn lock_file(storage: &FilesystemStorage) -> Result<std::fs::File, Error> {
     std::fs::OpenOptions::new()
@@ -146,7 +142,7 @@ macro_rules! impl_shared {
 
                         // Safety: only verified commits are persisted
                         unsafe { Ok(Some(commit.verify_unchecked())) }
-                    },
+                    }
                     Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
                     Err(e) => Err(e.into()),
                 }
@@ -208,11 +204,10 @@ impl StorageExclusiveGuard<FilesystemStorage> for FilesystemStorageExclusiveGuar
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use super::FilesystemStorage;
-    use tempdir::TempDir;
+    use super::*;
     use std::future::Future;
-
+    use tempdir::TempDir;
 
     async fn ephemeral_storage<F, Fut>(cb: F)
     where
@@ -236,10 +231,16 @@ mod test {
     }
 
     async fn original_content_not_lost_impl(storage: FilesystemStorage) {
-        let s = storage.try_shared().expect("failed to acquire shared storage lock");
+        let s = storage
+            .try_shared()
+            .expect("failed to acquire shared storage lock");
         let expected: Snapshot = "hey".to_owned().into();
 
-        assert_eq!(expected, s.load_current_snapshot().await.unwrap(), "storage creation mangled file");
+        assert_eq!(
+            expected,
+            s.load_current_snapshot().await.unwrap(),
+            "storage creation mangled file"
+        );
     }
 
     test_storage_trait_for_impl!(ephemeral_storage);
