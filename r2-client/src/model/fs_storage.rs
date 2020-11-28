@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use tokio::fs;
 
-use super::commit::{UnsafeCommit, Commit};
+use super::commit::{UnverifiedCommit, Commit};
 use super::storage::{Storage, StorageExclusiveGuard, StorageSharedGuard};
 use super::snapshot::Snapshot;
 
@@ -135,13 +135,18 @@ macro_rules! impl_shared {
     ($typename:ident) => {
         #[tonic::async_trait]
         impl StorageSharedGuard<FilesystemStorage> for $typename {
-            async fn load_commit(&self, commit_id: &str) -> Result<Option<UnsafeCommit>, Error> {
+            async fn load_commit(&self, commit_id: &str) -> Result<Option<Commit>, Error> {
                 use std::io::ErrorKind;
 
                 let commit_file_path = commit_path(&self.root, commit_id);
 
                 match fs::read_to_string(commit_file_path).await {
-                    Ok(commit) => Ok(Some(toml::from_str(&commit)?)),
+                    Ok(commit) => {
+                        let commit: UnverifiedCommit = toml::from_str(&commit)?;
+
+                        // Safety: only verified commits are persisted
+                        unsafe { Ok(Some(commit.verify_unchecked())) }
+                    },
                     Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
                     Err(e) => Err(e.into()),
                 }

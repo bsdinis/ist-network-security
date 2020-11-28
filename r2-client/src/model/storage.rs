@@ -1,4 +1,4 @@
-use super::commit::{Commit, UnsafeCommit};
+use super::commit::Commit;
 use super::snapshot::Snapshot;
 
 type Error = Box<dyn std::error::Error>; // TODO: use more specific type
@@ -16,7 +16,7 @@ pub trait Storage<T: Storage<T>> {
 pub trait StorageSharedGuard<T: Storage<T>>: Drop {
     /// Load a persisted commit from repo
     /// Will return None if the commit does not exist in storage.
-    async fn load_commit(&self, commit_id: &str) -> Result<Option<UnsafeCommit>, Error>;
+    async fn load_commit(&self, commit_id: &str) -> Result<Option<Commit>, Error>;
 
     /// Read head reference
     /// Will return an error if the head was not saved before.
@@ -52,7 +52,8 @@ pub trait StorageExclusiveGuard<T: Storage<T>>: StorageSharedGuard<T> {
 #[cfg(test)]
 #[macro_use]
 pub mod test {
-    use super::*;
+    use super::{Storage, StorageSharedGuard, StorageExclusiveGuard};
+    use crate::model::snapshot::Snapshot;
     use crate::test_utils::commit::*;
     use std::mem;
 
@@ -100,17 +101,14 @@ pub mod test {
 
         pub async fn save_load_commits(&self) {
             let mut s = self.0.try_exclusive().expect("can't lock storage (exclusive)");
-            assert_eq!(None, s.load_commit(&COMMIT_0.id).await.unwrap());
-            assert_eq!(None, s.load_commit(&COMMIT_1.id).await.unwrap());
+            assert!(s.load_commit(&COMMIT_0.id).await.unwrap().is_none());
+            assert!(s.load_commit(&COMMIT_1.id).await.unwrap().is_none());
 
             s.save_commit(&*COMMIT_0).await.expect("can't save commit");
             s.save_commit(&*COMMIT_1).await.expect("can't save commit");
 
-            let ucommit0: UnsafeCommit = COMMIT_0.to_owned().into();
-            let ucommit1: UnsafeCommit = COMMIT_1.to_owned().into();
-
-            assert_eq!(ucommit0, s.load_commit(&COMMIT_0.id).await.unwrap().unwrap(), "storage mangled commit");
-            assert_eq!(ucommit1, s.load_commit(&COMMIT_1.id).await.unwrap().unwrap(), "storage mangled commit");
+            assert_eq!(COMMIT_0.to_owned(), s.load_commit(&COMMIT_0.id).await.unwrap().unwrap(), "storage mangled commit");
+            assert_eq!(COMMIT_1.to_owned(), s.load_commit(&COMMIT_1.id).await.unwrap().unwrap(), "storage mangled commit");
         }
 
         pub async fn save_load_head(&self) {

@@ -7,7 +7,7 @@ mod model;
 
 pub use model::storage::{Storage, StorageSharedGuard, StorageExclusiveGuard};
 pub use model::snapshot::{Snapshot, PatchStr};
-pub use model::commit::{Commit, UnsafeCommit};
+pub use model::commit::{Commit, UnverifiedCommit, CommitBuilder};
 pub use model::user::User;
 
 pub use model::fs_storage::FilesystemStorage;
@@ -51,10 +51,8 @@ impl<S: Storage<S>> File<S> {
 
         let commit = {
             let patch = self.diff_locked(&storage, RichRevisionId::RelativeHead(0), RichRevisionId::Current).await?;
-            let head = storage.load_head().await?;
-            let prev_commit = Some(self.get_commit(&storage, &head).await?);
 
-            let ucommit = UnsafeCommit::new(prev_commit.as_ref(), message, patch);
+            let ucommit = CommitBuilder::from_head(&storage, message, patch).await?;
             let author = self.get_own_user(&storage).await?;
             ucommit.author(&author)?
         };
@@ -95,12 +93,14 @@ impl<S: Storage<S>> File<S> {
     async fn walk_back_from_commit(&self, storage: &dyn StorageSharedGuard<S>, commit_id: &str) -> Result<Vec<Commit>, Error> {
         let mut res = Vec::new();
 
-        let commit = self.get_commit(storage, commit_id).await?;
+        let commit = storage.load_commit(commit_id).await?
+            .ok_or(format!("Commit {} not found", commit_id))?;
         let mut prev_id = commit.prev_commit_id.clone();
         res.push(commit);
 
         while let Some(ref id) = prev_id {
-            let commit = self.get_commit(storage, id).await?;
+            let commit = storage.load_commit(id).await?
+                .ok_or(format!("Commit {} not found", id))?;
             prev_id = commit.prev_commit_id.clone();
             res.push(commit);
         }
@@ -112,31 +112,13 @@ impl<S: Storage<S>> File<S> {
     async fn parse_head_relative_revision(&self, storage: &dyn StorageSharedGuard<S>, i: usize) -> Result<String, Error> {
         let mut commit_id = storage.load_head().await?;
         for _ in 0..i {
-            commit_id = self.get_commit(storage, &commit_id).await?
+            commit_id = storage.load_commit(&commit_id).await?
+                .ok_or(format!("Commit {} not found", commit_id))?
                 .prev_commit_id
                 .ok_or(format!("Unknown revision: HEAD~{}", i))?;
         }
 
         Ok(commit_id)
-    }
-
-    async fn get_commit(&self, storage: &dyn StorageSharedGuard<S>, commit_id: &str) -> Result<Commit, Error> {
-        let unsafe_commit = match storage.load_commit(commit_id).await {
-            Ok(Some(v)) => v,
-            Ok(None) => return Err(format!("Commit {} not found", commit_id).into()),
-            Err(e) => return Err(e.into()),
-        };
-
-        let author_id = unsafe_commit.author_id.as_ref()
-            .ok_or(format!("Commit {:?} invalid: missing author", unsafe_commit.id))?;
-
-        let author = self.get_collaborator(storage, author_id).await?;
-
-        unsafe_commit.verify(&author)
-    }
-
-    async fn get_collaborator(&self, _storage: &dyn StorageSharedGuard<S>, _id: &str) -> Result<User, Error> {
-        unimplemented!()
     }
 
     async fn get_own_user(&self, _storage: &dyn StorageSharedGuard<S>) -> Result<User, Error> {
