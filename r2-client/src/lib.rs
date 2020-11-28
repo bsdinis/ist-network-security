@@ -92,7 +92,7 @@ impl<S: Storage<S>> File<S> {
         storage.save_head(&commit_id).await?;
 
         if let ResetHardness::Hard = softness {
-            let content = self.snapshot(storage, CommitId(commit_id)).await?;
+            let content = self.snapshot(&storage, CommitId(commit_id)).await?;
             storage.save_current_snapshot(&content).await?;
         }
 
@@ -101,12 +101,12 @@ impl<S: Storage<S>> File<S> {
 
     /// Initiate or vote for a rollback
     /// Analogous to a global [`Self::reset()`]
-    pub async fn rollback(&self, rev: RichRevisionId, softness: ResetHardness) -> Result<(), Error> {
+    pub async fn rollback(&self, _rev: RichRevisionId, _softness: ResetHardness) -> Result<(), Error> {
         unimplemented!()
     }
 
     /// Initiate or vote for a squash
-    pub async fn squash(&self, from_rev: RichRevisionId) -> Result<(), Error> {
+    pub async fn squash(&self, _from_rev: RichRevisionId) -> Result<(), Error> {
         unimplemented!()
     }
 
