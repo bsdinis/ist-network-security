@@ -181,7 +181,6 @@ pub mod test {
                             pub async fn aux<S: Storage<S>>(s: S) {
                                 let tester = StorageTester::new(s);
                                 tester.$test_name().await;
-                                //std::thread::sleep(std::time::Duration::from_millis(60000));
                             }
                         }
 
