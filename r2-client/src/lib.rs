@@ -13,7 +13,11 @@ pub use persistence::*;
 type Error = Box<dyn std::error::Error>;
 
 /// A File tracked by R2
-pub struct File<S: Storage> {
+pub struct File<S: Storage>
+where
+    S::SharedGuard: Sync,
+    S::ExclusiveGuard: Sync,
+{
     storage: S,
 }
 
@@ -39,7 +43,11 @@ pub enum ResetHardness {
     Soft,
 }
 
-impl<S: Storage> File<S> {
+impl<S: Storage> File<S>
+where
+    S::SharedGuard: Sync,
+    S::ExclusiveGuard: Sync,
+{
     pub fn new(storage: S) -> Self {
         File { storage }
     }
@@ -47,7 +55,7 @@ impl<S: Storage> File<S> {
     /// Compute the patch that transforms revision a into revision b
     pub async fn diff(&self, a: RichRevisionId, b: RichRevisionId) -> Result<PatchStr, Error> {
         let storage = self.storage.try_shared()?;
-        self.diff_locked(&storage, a, b).await
+        storage.diff(a, b).await
     }
 
     /// Commit the current state
@@ -55,12 +63,8 @@ impl<S: Storage> File<S> {
         let mut storage = self.storage.try_exclusive()?;
 
         let commit = {
-            let patch = self
-                .diff_locked(
-                    &storage,
-                    RichRevisionId::RelativeHead(0),
-                    RichRevisionId::Uncommitted,
-                )
+            let patch = storage
+                .diff(RichRevisionId::RelativeHead(0), RichRevisionId::Uncommitted)
                 .await?;
 
             let ucommit = build_commit_from_head(&storage, message, patch).await?;
@@ -83,20 +87,18 @@ impl<S: Storage> File<S> {
             CommitId(id) => {
                 // verify that commit id is in the current graph
                 let head = storage.load_head().await?;
-                let _ = self
-                    .walk_back_from_commit(&storage, &head, Some(&id))
-                    .await?;
+                let _ = storage.walk_back_from_commit(&head, Some(&id)).await?;
 
                 id
             }
-            RelativeHead(n) => self.parse_head_relative_revision(&storage, n).await?,
+            RelativeHead(n) => storage.head_minus(n).await?,
             Uncommitted => return Ok(()),
         };
 
         storage.save_head(&commit_id).await?;
 
         if let ResetHardness::Hard = softness {
-            let content = self.snapshot(&storage, CommitId(commit_id)).await?;
+            let content = storage.snapshot(CommitId(commit_id)).await?;
             storage.save_current_snapshot(&content).await?;
         }
 
@@ -130,34 +132,33 @@ impl<S: Storage> File<S> {
         unimplemented!()
     }
 
-    async fn diff_locked(
-        &self,
-        storage: &dyn StorageSharedGuard,
-        a: RichRevisionId,
-        b: RichRevisionId,
-    ) -> Result<PatchStr, Error> {
-        let snapshot_a = self.snapshot(storage, a).await?;
-        let snapshot_b = self.snapshot(storage, b).await?;
+    async fn get_own_user(&self, _storage: &dyn StorageSharedGuard) -> Result<User, Error> {
+        unimplemented!()
+    }
+}
+
+#[tonic::async_trait]
+trait StorageSharedGuardExt: StorageSharedGuard {
+    /// Compute the patch that transforms revision a into revision b
+    async fn diff(&self, a: RichRevisionId, b: RichRevisionId) -> Result<PatchStr, Error> {
+        let snapshot_a = self.snapshot(a).await?;
+        let snapshot_b = self.snapshot(b).await?;
 
         Ok(snapshot_a.diff(&snapshot_b))
     }
 
     /// Get snapshot of a revision
-    async fn snapshot(
-        &self,
-        storage: &dyn StorageSharedGuard,
-        r: RichRevisionId,
-    ) -> Result<Snapshot, Error> {
+    async fn snapshot(&self, r: RichRevisionId) -> Result<Snapshot, Error> {
         use RichRevisionId::*;
         let commit_id = match r {
-            Uncommitted => return Ok(storage.load_current_snapshot().await?),
+            Uncommitted => return Ok(self.load_current_snapshot().await?),
             CommitId(id) => id,
-            RelativeHead(i) => self.parse_head_relative_revision(storage, i).await?,
+            RelativeHead(n) => self.head_minus(n).await?,
         };
 
         // build snapshot from commit history
         let snapshot = self
-            .walk_back_from_commit(storage, &commit_id, None)
+            .walk_back_from_commit(&commit_id, None)
             .await?
             .drain(..)
             .rev()
@@ -170,26 +171,25 @@ impl<S: Storage> File<S> {
     /// Given a commit ID, return a vector containing it and all
     async fn walk_back_from_commit(
         &self,
-        storage: &dyn StorageSharedGuard,
-        commit_id: &str,
-        until: Option<&str>,
+        from_id: &str,
+        to_id: Option<&str>,
     ) -> Result<Vec<Commit>, Error> {
         let mut res = Vec::new();
 
-        let commit = storage
-            .load_commit(commit_id)
+        let commit = self
+            .load_commit(from_id)
             .await?
-            .ok_or(format!("Commit {} not found", commit_id))?;
+            .ok_or(format!("Commit {} not found", from_id))?;
         let mut prev_id = commit.prev_commit_id.clone();
         res.push(commit);
 
         while let Some(ref id) = prev_id {
-            let commit = storage
+            let commit = self
                 .load_commit(id)
                 .await?
                 .ok_or(format!("Commit {} not found", id))?;
 
-            prev_id = match until {
+            prev_id = match to_id {
                 // stop going back when target is reached
                 Some(until) if until == id => None,
                 _ => commit.prev_commit_id.clone(),
@@ -201,14 +201,10 @@ impl<S: Storage> File<S> {
     }
 
     /// Get commit id corresponding to a HEAD~n reference
-    async fn parse_head_relative_revision(
-        &self,
-        storage: &dyn StorageSharedGuard,
-        n: usize,
-    ) -> Result<String, Error> {
-        let mut commit_id = storage.load_head().await?;
+    async fn head_minus(&self, n: usize) -> Result<String, Error> {
+        let mut commit_id = self.load_head().await?;
         for _ in 0..n {
-            commit_id = storage
+            commit_id = self
                 .load_commit(&commit_id)
                 .await?
                 .ok_or(format!("Commit {} not found", commit_id))?
@@ -218,11 +214,9 @@ impl<S: Storage> File<S> {
 
         Ok(commit_id)
     }
-
-    async fn get_own_user(&self, _storage: &dyn StorageSharedGuard) -> Result<User, Error> {
-        unimplemented!()
-    }
 }
+
+impl<T: StorageSharedGuard + Sync> StorageSharedGuardExt for T {}
 
 async fn build_commit_from_head(
     storage: &dyn StorageSharedGuard,
@@ -230,7 +224,9 @@ async fn build_commit_from_head(
     patch: PatchStr,
 ) -> Result<CommitBuilder, Error> {
     let prev_commit_id = storage.load_head().await?;
-    let prev_commit = storage.load_commit(&prev_commit_id).await?
-        .ok_or(format!("invalid HEAD: commit {} does not exist", &prev_commit_id))?;
+    let prev_commit = storage.load_commit(&prev_commit_id).await?.ok_or(format!(
+        "invalid HEAD: commit {} does not exist",
+        &prev_commit_id
+    ))?;
     Ok(CommitBuilder::from_commit(&prev_commit, message, patch))
 }
