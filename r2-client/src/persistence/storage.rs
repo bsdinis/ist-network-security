@@ -3,9 +3,9 @@ use crate::model::Snapshot;
 
 type Error = Box<dyn std::error::Error>; // TODO: use more specific type
 
-pub trait Storage<T: Storage<T>> {
-    type SharedGuard: StorageSharedGuard<T>;
-    type ExclusiveGuard: StorageExclusiveGuard<T>;
+pub trait Storage {
+    type SharedGuard: StorageSharedGuard;
+    type ExclusiveGuard: StorageExclusiveGuard;
 
     fn try_shared(&self) -> Result<Self::SharedGuard, Error>;
 
@@ -13,7 +13,7 @@ pub trait Storage<T: Storage<T>> {
 }
 
 #[tonic::async_trait]
-pub trait StorageSharedGuard<T: Storage<T>>: Drop {
+pub trait StorageSharedGuard: Drop {
     /// Load a persisted commit from repo
     /// Will return None if the commit does not exist in storage.
     async fn load_commit(&self, commit_id: &str) -> Result<Option<Commit>, Error>;
@@ -35,7 +35,7 @@ pub trait StorageSharedGuard<T: Storage<T>>: Drop {
 }
 
 #[tonic::async_trait]
-pub trait StorageExclusiveGuard<T: Storage<T>>: StorageSharedGuard<T> {
+pub trait StorageExclusiveGuard: StorageSharedGuard {
     /// Persist a commit
     async fn save_commit(&mut self, c: &Commit) -> Result<(), Error>;
 
@@ -57,15 +57,15 @@ pub mod test {
     use crate::test_utils::commit::*;
     use std::mem;
 
-    pub struct StorageTester<T: Storage<T>>(T);
+    pub struct StorageTester<T: Storage>(T);
 
-    impl<T: Storage<T>> From<T> for StorageTester<T> {
+    impl<T: Storage> From<T> for StorageTester<T> {
         fn from(storage: T) -> Self {
             StorageTester(storage)
         }
     }
 
-    impl<T: Storage<T>> StorageTester<T> {
+    impl<T: Storage> StorageTester<T> {
         pub fn new(storage: T) -> Self {
             storage.into()
         }
@@ -231,7 +231,7 @@ pub mod test {
                         mod $test_name {
                             use crate::persistence::storage::{test::StorageTester, Storage};
 
-                            pub async fn aux<S: Storage<S>>(s: S) {
+                            pub async fn aux<S: Storage>(s: S) {
                                 let tester = StorageTester::new(s);
                                 tester.$test_name().await;
                             }

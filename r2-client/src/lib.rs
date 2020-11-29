@@ -13,7 +13,7 @@ pub use persistence::*;
 type Error = Box<dyn std::error::Error>;
 
 /// A File tracked by R2
-pub struct File<S: Storage<S>> {
+pub struct File<S: Storage> {
     storage: S,
 }
 
@@ -39,7 +39,7 @@ pub enum ResetHardness {
     Soft,
 }
 
-impl<S: Storage<S>> File<S> {
+impl<S: Storage> File<S> {
     pub fn new(storage: S) -> Self {
         File { storage }
     }
@@ -132,7 +132,7 @@ impl<S: Storage<S>> File<S> {
 
     async fn diff_locked(
         &self,
-        storage: &dyn StorageSharedGuard<S>,
+        storage: &dyn StorageSharedGuard,
         a: RichRevisionId,
         b: RichRevisionId,
     ) -> Result<PatchStr, Error> {
@@ -145,7 +145,7 @@ impl<S: Storage<S>> File<S> {
     /// Get snapshot of a revision
     async fn snapshot(
         &self,
-        storage: &dyn StorageSharedGuard<S>,
+        storage: &dyn StorageSharedGuard,
         r: RichRevisionId,
     ) -> Result<Snapshot, Error> {
         use RichRevisionId::*;
@@ -170,7 +170,7 @@ impl<S: Storage<S>> File<S> {
     /// Given a commit ID, return a vector containing it and all
     async fn walk_back_from_commit(
         &self,
-        storage: &dyn StorageSharedGuard<S>,
+        storage: &dyn StorageSharedGuard,
         commit_id: &str,
         until: Option<&str>,
     ) -> Result<Vec<Commit>, Error> {
@@ -203,7 +203,7 @@ impl<S: Storage<S>> File<S> {
     /// Get commit id corresponding to a HEAD~n reference
     async fn parse_head_relative_revision(
         &self,
-        storage: &dyn StorageSharedGuard<S>,
+        storage: &dyn StorageSharedGuard,
         n: usize,
     ) -> Result<String, Error> {
         let mut commit_id = storage.load_head().await?;
@@ -219,17 +219,18 @@ impl<S: Storage<S>> File<S> {
         Ok(commit_id)
     }
 
-    async fn get_own_user(&self, _storage: &dyn StorageSharedGuard<S>) -> Result<User, Error> {
+    async fn get_own_user(&self, _storage: &dyn StorageSharedGuard) -> Result<User, Error> {
         unimplemented!()
     }
 }
 
-async fn build_commit_from_head<T: Storage<T>>(
-    storage: &dyn StorageSharedGuard<T>,
+async fn build_commit_from_head(
+    storage: &dyn StorageSharedGuard,
     message: String,
     patch: PatchStr,
 ) -> Result<CommitBuilder, Error> {
-    let prev_commit_id = Some(storage.load_head().await?);
-    let commit_builder = unsafe { CommitBuilder::from_commit_id(prev_commit_id, message, patch) };
-    Ok(commit_builder)
+    let prev_commit_id = storage.load_head().await?;
+    let prev_commit = storage.load_commit(&prev_commit_id).await?
+        .ok_or(format!("invalid HEAD: commit {} does not exist", &prev_commit_id))?;
+    Ok(CommitBuilder::from_commit(&prev_commit, message, patch))
 }

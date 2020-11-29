@@ -64,7 +64,7 @@ impl FilesystemStorage {
     }
 }
 
-impl Storage<FilesystemStorage> for FilesystemStorage {
+impl Storage for FilesystemStorage {
     type SharedGuard = FilesystemStorageSharedGuard;
     type ExclusiveGuard = FilesystemStorageExclusiveGuard;
 
@@ -130,7 +130,7 @@ impl Drop for FilesystemStorageExclusiveGuard {
 macro_rules! impl_shared {
     ($typename:ident) => {
         #[tonic::async_trait]
-        impl StorageSharedGuard<FilesystemStorage> for $typename {
+        impl StorageSharedGuard for $typename {
             async fn load_commit(&self, commit_id: &str) -> Result<Option<Commit>, Error> {
                 use std::io::ErrorKind;
 
@@ -171,7 +171,7 @@ impl_shared!(FilesystemStorageSharedGuard);
 impl_shared!(FilesystemStorageExclusiveGuard);
 
 #[tonic::async_trait]
-impl StorageExclusiveGuard<FilesystemStorage> for FilesystemStorageExclusiveGuard {
+impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
     async fn save_commit(&mut self, commit: &Commit) -> Result<(), Error> {
         let commit_file_path = commit_path(&self.root, &commit.id);
 
