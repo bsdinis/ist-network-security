@@ -21,7 +21,7 @@ pub mod signature_keys {
 
 pub mod user {
     use super::signature_keys::*;
-    use crate::model::user::User;
+    use crate::model::User;
 
     lazy_static! {
         pub static ref USER_A: User =
@@ -34,7 +34,7 @@ pub mod user {
 }
 
 pub mod patch {
-    use crate::model::snapshot::{PatchStr, Snapshot};
+    use crate::model::{PatchStr, Snapshot};
 
     lazy_static! {
         pub static ref EMPTY: Snapshot = String::new().into();
@@ -50,7 +50,7 @@ pub mod patch {
 pub mod commit {
     use super::patch::{PATCH_A_B, PATCH_EMPTY_A};
     use super::user::{USER_A, USER_B};
-    use crate::model::commit::{Commit, CommitBuilder};
+    use crate::model::{Commit, CommitBuilder};
 
     lazy_static! {
         pub static ref COMMIT_0: Commit =

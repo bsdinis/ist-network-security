@@ -2,16 +2,13 @@
 extern crate lazy_static;
 
 mod model;
+mod persistence;
 mod sigkey;
 #[cfg(test)]
 mod test_utils;
 
-pub use model::commit::{Commit, CommitBuilder, UnverifiedCommit};
-pub use model::snapshot::{PatchStr, Snapshot};
-pub use model::storage::{Storage, StorageExclusiveGuard, StorageSharedGuard};
-pub use model::user::User;
-
-pub use model::fs_storage::FilesystemStorage;
+pub use model::*;
+pub use persistence::*;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -66,7 +63,7 @@ impl<S: Storage<S>> File<S> {
                 )
                 .await?;
 
-            let ucommit = CommitBuilder::from_head(&storage, message, patch).await?;
+            let ucommit = build_commit_from_head(&storage, message, patch).await?;
             let author = self.get_own_user(&storage).await?;
             ucommit.author(&author)?
         };
@@ -225,4 +222,14 @@ impl<S: Storage<S>> File<S> {
     async fn get_own_user(&self, _storage: &dyn StorageSharedGuard<S>) -> Result<User, Error> {
         unimplemented!()
     }
+}
+
+async fn build_commit_from_head<T: Storage<T>>(
+    storage: &dyn StorageSharedGuard<T>,
+    message: String,
+    patch: PatchStr,
+) -> Result<CommitBuilder, Error> {
+    let prev_commit_id = Some(storage.load_head().await?);
+    let commit_builder = unsafe { CommitBuilder::from_commit_id(prev_commit_id, message, patch) };
+    Ok(commit_builder)
 }

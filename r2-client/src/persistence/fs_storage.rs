@@ -3,9 +3,9 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use tokio::fs;
 
-use super::commit::{Commit, UnverifiedCommit};
-use super::snapshot::Snapshot;
-use super::storage::{Storage, StorageExclusiveGuard, StorageSharedGuard};
+use super::{Storage, StorageExclusiveGuard, StorageSharedGuard};
+use crate::model::Snapshot;
+use crate::model::{Commit, UnverifiedCommit};
 
 type Error = Box<dyn std::error::Error>; // TODO: use more specific type
 

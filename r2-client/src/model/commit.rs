@@ -1,5 +1,4 @@
 use super::snapshot::PatchStr;
-use super::storage::{Storage, StorageSharedGuard};
 use super::user::User;
 use crate::sigkey::{MaybeSigner, SignatureVerifier};
 use chrono::{DateTime, Utc};
@@ -169,17 +168,16 @@ impl CommitBuilder {
         }
     }
 
-    pub async fn from_head<T: Storage<T>>(
-        storage: &dyn StorageSharedGuard<T>,
+    pub unsafe fn from_commit_id(
+        prev_commit_id: Option<String>,
         message: String,
         patch: PatchStr,
-    ) -> Result<Self, Error> {
-        let prev_commit_id = Some(storage.load_head().await?);
-        Ok(CommitBuilder {
+    ) -> Self {
+        CommitBuilder {
             prev_commit_id,
             message,
             patch,
-        })
+        }
     }
 
     /// Convert to [Commit], setting the author, generating an ID and signing it.
