@@ -203,45 +203,63 @@ impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
 }
 
 #[cfg(test)]
-mod test {
-    use super::FilesystemStorage;
-    use super::*;
-    use std::future::Future;
+pub mod test {
+    use super::{Error, FilesystemStorage};
+    use crate::model::Snapshot;
+    use crate::persistence::{Storage, StorageSharedGuard};
     use tempdir::TempDir;
 
-    async fn ephemeral_storage<F, Fut>(cb: F)
-    where
-        F: Fn(FilesystemStorage) -> Fut,
-        Fut: Future<Output = ()>,
-    {
-        let dir = TempDir::new("r2fstor_test")
-            .expect("!NOT A TEST PROBLEM! failed to create ephemeral storage directory !NOT A TEST PROBLEM!");
+    /// Wrapper for [FilesystemStorage] that creates a temp dir for storage
+    pub struct TempDirFilesystemStorage(TempDir, FilesystemStorage);
+    impl Storage for TempDirFilesystemStorage {
+        type SharedGuard = <FilesystemStorage as Storage>::SharedGuard;
+        type ExclusiveGuard = <FilesystemStorage as Storage>::ExclusiveGuard;
 
-        eprintln!("Test dir is {:?}", dir.path());
-        let file_path = dir.path().join("thefile.txt");
-        std::fs::write(&file_path, "hey").expect("failed to create test file in storage");
+        fn try_shared(&self) -> Result<Self::SharedGuard, Error> {
+            self.1.try_shared()
+        }
 
-        let storage = FilesystemStorage::new(file_path).expect("failed to create storage");
-        cb(storage).await;
+        fn try_exclusive(&self) -> Result<Self::ExclusiveGuard, Error> {
+            self.1.try_exclusive()
+        }
+    }
+
+    impl TempDirFilesystemStorage {
+        pub const FILE_NAME: &'static str = "thefile.txt";
+        pub const FILE_INITIAL_CONTENTS: &'static str = "hey";
+
+        pub fn new() -> Self {
+            let dir = TempDir::new("r2fstor_test")
+                .expect("!NOT A TEST PROBLEM! failed to create ephemeral storage directory !NOT A TEST PROBLEM!");
+
+            eprintln!("Test dir is {:?}", dir.path());
+            let file_path = dir.path().join(Self::FILE_NAME);
+            std::fs::write(&file_path, Self::FILE_INITIAL_CONTENTS)
+                .expect("failed to create test file in storage");
+
+            let storage = FilesystemStorage::new(file_path).expect("failed to create storage");
+
+            TempDirFilesystemStorage(dir, storage)
+        }
     }
 
     #[tokio::test]
     async fn original_content_not_lost() {
-        ephemeral_storage(original_content_not_lost_impl).await
-    }
-
-    async fn original_content_not_lost_impl(storage: FilesystemStorage) {
-        let s = storage
+        let storage = TempDirFilesystemStorage::new();
+        let storage = storage
             .try_shared()
             .expect("failed to acquire shared storage lock");
         let expected: Snapshot = "hey".to_owned().into();
 
         assert_eq!(
             expected,
-            s.load_current_snapshot().await.unwrap(),
+            storage.load_current_snapshot().await.unwrap(),
             "storage creation mangled file"
         );
     }
 
-    test_storage_trait_for_impl!(ephemeral_storage);
+    fn storage_builder() -> TempDirFilesystemStorage {
+        TempDirFilesystemStorage::new()
+    }
+    test_storage_trait_for_impl!(storage_builder);
 }

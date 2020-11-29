@@ -230,3 +230,14 @@ async fn build_commit_from_head(
     ))?;
     Ok(CommitBuilder::from_commit(&prev_commit, message, patch))
 }
+
+#[cfg(test)]
+mod test {
+    use super::File;
+    use crate::persistence::test::TempDirFilesystemStorage;
+
+    #[test]
+    fn create() {
+        let _ = File::new(TempDirFilesystemStorage::new());
+    }
+}
