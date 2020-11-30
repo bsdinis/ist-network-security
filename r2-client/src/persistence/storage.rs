@@ -1,71 +1,78 @@
 use crate::model::Commit;
 use crate::model::Snapshot;
 
-type Error = Box<dyn std::error::Error>; // TODO: use more specific type
-
 pub trait Storage {
-    type SharedGuard: StorageSharedGuard;
-    type ExclusiveGuard: StorageExclusiveGuard;
+    type Error;
+    type SharedGuard: StorageSharedGuard<Error = Self::Error>;
+    type ExclusiveGuard: StorageExclusiveGuard<Error = Self::Error>;
 
-    fn try_shared(&self) -> Result<Self::SharedGuard, Error>;
+    fn try_shared(&self) -> Result<Self::SharedGuard, Self::Error>;
 
-    fn try_exclusive(&self) -> Result<Self::ExclusiveGuard, Error>;
+    fn try_exclusive(&self) -> Result<Self::ExclusiveGuard, Self::Error>;
 }
 
 #[tonic::async_trait]
 pub trait StorageSharedGuard: Drop {
+    type Error;
+
     /// Load a persisted commit from repo
     /// Will return None if the commit does not exist in storage.
-    async fn load_commit(&self, commit_id: &str) -> Result<Option<Commit>, Error>;
+    async fn load_commit(&self, commit_id: &str) -> Result<Option<Commit>, Self::Error>;
 
     /// Read head reference
     /// Will return an error if the head was not saved before.
-    async fn load_head(&self) -> Result<String, Error>;
+    async fn load_head(&self) -> Result<String, Self::Error>;
 
     /// Read remote head reference
     /// Will return an error if the remote head was not saved before.
-    async fn load_remote_head(&self) -> Result<String, Error>;
+    async fn load_remote_head(&self) -> Result<String, Self::Error>;
 
     /// Read current file contents
-    async fn load_current_snapshot(&self) -> Result<Snapshot, Error>;
+    async fn load_current_snapshot(&self) -> Result<Snapshot, Self::Error>;
 
     /// Drops lock, consuming this guard object
     // no default implementation because the compiler is not smart enough
-    fn unlock(self);
+    fn unlock(self) where Self: Sized {}
 }
 
 #[tonic::async_trait]
 pub trait StorageExclusiveGuard: StorageSharedGuard {
     /// Persist a commit
-    async fn save_commit(&mut self, c: &Commit) -> Result<(), Error>;
+    async fn save_commit(&mut self, c: &Commit) -> Result<(), Self::Error>;
 
     /// Write head reference
-    async fn save_head(&mut self, commit_id: &str) -> Result<(), Error>;
+    async fn save_head(&mut self, commit_id: &str) -> Result<(), Self::Error>;
 
     /// Write remote head reference
-    async fn save_remote_head(&mut self, commit_id: &str) -> Result<(), Error>;
+    async fn save_remote_head(&mut self, commit_id: &str) -> Result<(), Self::Error>;
 
     /// Write file contents
-    async fn save_current_snapshot(&mut self, content: &Snapshot) -> Result<(), Error>;
+    async fn save_current_snapshot(&mut self, content: &Snapshot) -> Result<(), Self::Error>;
 }
 
 #[cfg(test)]
 #[macro_use]
 pub mod test {
-    use super::{Storage, StorageExclusiveGuard, StorageSharedGuard};
+    use super::{Storage, StorageSharedGuard, StorageExclusiveGuard};
+    use std::fmt::Debug;
     use crate::model::Snapshot;
     use crate::test_utils::commit::*;
     use std::mem;
 
-    pub struct StorageTester<T: Storage>(T);
+    pub struct StorageTester<T: Storage>(T)
+    where T::Error: Debug;
 
-    impl<T: Storage> From<T> for StorageTester<T> {
+    impl<T: Storage> From<T> for StorageTester<T>
+    where T::Error: Debug,
+    {
         fn from(storage: T) -> Self {
             StorageTester(storage)
         }
     }
 
-    impl<T: Storage> StorageTester<T> {
+    impl<T: Storage> StorageTester<T>
+    where T::Error: Debug
+    {
         pub fn new(storage: T) -> Self {
             storage.into()
         }

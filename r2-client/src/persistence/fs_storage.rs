@@ -53,7 +53,7 @@ fn remote_head_path(root: &PathBuf) -> PathBuf {
 }
 
 impl FilesystemStorage {
-    pub fn new(file_path: PathBuf) -> Result<Self, Error> {
+    pub fn new(file_path: PathBuf) -> Result<Self, <Self as Storage>::Error> {
         let root = root_path(&file_path);
 
         std::fs::DirBuilder::new()
@@ -65,14 +65,15 @@ impl FilesystemStorage {
 }
 
 impl Storage for FilesystemStorage {
+    type Error = Error;
     type SharedGuard = FilesystemStorageSharedGuard;
     type ExclusiveGuard = FilesystemStorageExclusiveGuard;
 
-    fn try_shared(&self) -> Result<Self::SharedGuard, Error> {
+    fn try_shared(&self) -> Result<Self::SharedGuard, Self::Error> {
         FilesystemStorageSharedGuard::new(&self)
     }
 
-    fn try_exclusive(&self) -> Result<Self::ExclusiveGuard, Error> {
+    fn try_exclusive(&self) -> Result<Self::ExclusiveGuard, Self::Error> {
         FilesystemStorageExclusiveGuard::new(&self)
     }
 }
@@ -86,7 +87,7 @@ fn lock_file(storage: &FilesystemStorage) -> Result<std::fs::File, Error> {
 }
 
 impl FilesystemStorageSharedGuard {
-    fn new(storage: &FilesystemStorage) -> Result<Self, Error> {
+    fn new(storage: &FilesystemStorage) -> Result<Self, <Self as StorageSharedGuard>::Error> {
         let lock_file = lock_file(storage)?;
         lock_file.try_lock_shared()?;
 
@@ -99,7 +100,7 @@ impl FilesystemStorageSharedGuard {
 }
 
 impl FilesystemStorageExclusiveGuard {
-    fn new(storage: &FilesystemStorage) -> Result<Self, Error> {
+    fn new(storage: &FilesystemStorage) -> Result<Self, <Self as StorageSharedGuard>::Error> {
         let lock_file = lock_file(storage)?;
         lock_file.try_lock_exclusive()?;
 
@@ -131,7 +132,9 @@ macro_rules! impl_shared {
     ($typename:ident) => {
         #[tonic::async_trait]
         impl StorageSharedGuard for $typename {
-            async fn load_commit(&self, commit_id: &str) -> Result<Option<Commit>, Error> {
+            type Error = Error;
+
+            async fn load_commit(&self, commit_id: &str) -> Result<Option<Commit>, Self::Error> {
                 use std::io::ErrorKind;
 
                 let commit_file_path = commit_path(&self.root, commit_id);
@@ -148,20 +151,16 @@ macro_rules! impl_shared {
                 }
             }
 
-            async fn load_head(&self) -> Result<String, Error> {
+            async fn load_head(&self) -> Result<String, Self::Error> {
                 Ok(fs::read_to_string(head_path(&self.root)).await?)
             }
 
-            async fn load_remote_head(&self) -> Result<String, Error> {
+            async fn load_remote_head(&self) -> Result<String, Self::Error> {
                 Ok(fs::read_to_string(remote_head_path(&self.root)).await?)
             }
 
-            async fn load_current_snapshot(&self) -> Result<Snapshot, Error> {
+            async fn load_current_snapshot(&self) -> Result<Snapshot, Self::Error> {
                 Ok(fs::read_to_string(&self.file_path).await?.into())
-            }
-
-            fn unlock(self) {
-                // guard is dropped
             }
         }
     };
@@ -172,7 +171,7 @@ impl_shared!(FilesystemStorageExclusiveGuard);
 
 #[tonic::async_trait]
 impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
-    async fn save_commit(&mut self, commit: &Commit) -> Result<(), Error> {
+    async fn save_commit(&mut self, commit: &Commit) -> Result<(), <Self as StorageSharedGuard>::Error> {
         let commit_file_path = commit_path(&self.root, &commit.id);
 
         fs::DirBuilder::new()
@@ -186,17 +185,17 @@ impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
         Ok(())
     }
 
-    async fn save_head(&mut self, commit_id: &str) -> Result<(), Error> {
+    async fn save_head(&mut self, commit_id: &str) -> Result<(), <Self as StorageSharedGuard>::Error> {
         fs::write(head_path(&self.root), commit_id).await?;
         Ok(())
     }
 
-    async fn save_remote_head(&mut self, commit_id: &str) -> Result<(), Error> {
+    async fn save_remote_head(&mut self, commit_id: &str) -> Result<(), <Self as StorageSharedGuard>::Error> {
         fs::write(remote_head_path(&self.root), commit_id).await?;
         Ok(())
     }
 
-    async fn save_current_snapshot(&mut self, content: &Snapshot) -> Result<(), Error> {
+    async fn save_current_snapshot(&mut self, content: &Snapshot) -> Result<(), <Self as StorageSharedGuard>::Error> {
         fs::write(&self.file_path, content).await?;
         Ok(())
     }
@@ -204,7 +203,7 @@ impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
 
 #[cfg(test)]
 pub mod test {
-    use super::{Error, FilesystemStorage};
+    use super::FilesystemStorage;
     use crate::model::Snapshot;
     use crate::persistence::{Storage, StorageSharedGuard};
     use tempdir::TempDir;
@@ -212,14 +211,15 @@ pub mod test {
     /// Wrapper for [FilesystemStorage] that creates a temp dir for storage
     pub struct TempDirFilesystemStorage(TempDir, FilesystemStorage);
     impl Storage for TempDirFilesystemStorage {
+        type Error = <FilesystemStorage as Storage>::Error;
         type SharedGuard = <FilesystemStorage as Storage>::SharedGuard;
         type ExclusiveGuard = <FilesystemStorage as Storage>::ExclusiveGuard;
 
-        fn try_shared(&self) -> Result<Self::SharedGuard, Error> {
+        fn try_shared(&self) -> Result<Self::SharedGuard, Self::Error> {
             self.1.try_shared()
         }
 
-        fn try_exclusive(&self) -> Result<Self::ExclusiveGuard, Error> {
+        fn try_exclusive(&self) -> Result<Self::ExclusiveGuard, Self::Error> {
             self.1.try_exclusive()
         }
     }

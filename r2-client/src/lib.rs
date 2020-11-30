@@ -47,6 +47,7 @@ impl<S: Storage> File<S>
 where
     S::SharedGuard: Sync,
     S::ExclusiveGuard: Sync,
+    Error: From<S::Error>,
 {
     pub fn new(storage: S) -> Self {
         File { storage }
@@ -55,7 +56,7 @@ where
     /// Compute the patch that transforms revision a into revision b
     pub async fn diff(&self, a: RichRevisionId, b: RichRevisionId) -> Result<PatchStr, Error> {
         let storage = self.storage.try_shared()?;
-        storage.diff(a, b).await
+        Ok(storage.diff(a, b).await?)
     }
 
     /// Commit the current state
@@ -67,8 +68,8 @@ where
                 .diff(RichRevisionId::RelativeHead(0), RichRevisionId::Uncommitted)
                 .await?;
 
-            let ucommit = build_commit_from_head(&storage, message, patch).await?;
-            let author = self.get_own_user(&storage).await?;
+            let ucommit = storage.build_commit_from_head(message, patch).await?;
+            let author = storage.get_own_user().await?;
             ucommit.author(&author)?
         };
 
@@ -132,13 +133,13 @@ where
         unimplemented!()
     }
 
-    async fn get_own_user(&self, _storage: &dyn StorageSharedGuard) -> Result<User, Error> {
-        unimplemented!()
-    }
 }
 
 #[tonic::async_trait]
-trait StorageSharedGuardExt: StorageSharedGuard {
+trait StorageSharedGuardExt: StorageSharedGuard + Sync
+where
+    Error: From<Self::Error>,
+{
     /// Compute the patch that transforms revision a into revision b
     async fn diff(&self, a: RichRevisionId, b: RichRevisionId) -> Result<PatchStr, Error> {
         let snapshot_a = self.snapshot(a).await?;
@@ -214,22 +215,34 @@ trait StorageSharedGuardExt: StorageSharedGuard {
 
         Ok(commit_id)
     }
+
+    async fn get_own_user(&self) -> Result<User, Error> {
+        unimplemented!()
+    }
 }
 
-impl<T: StorageSharedGuard + Sync> StorageSharedGuardExt for T {}
+impl<T: StorageSharedGuard + Sync> StorageSharedGuardExt for T
+where Error: From<T::Error>,
+{}
 
-async fn build_commit_from_head(
-    storage: &dyn StorageSharedGuard,
-    message: String,
-    patch: PatchStr,
-) -> Result<CommitBuilder, Error> {
-    let prev_commit_id = storage.load_head().await?;
-    let prev_commit = storage.load_commit(&prev_commit_id).await?.ok_or(format!(
-        "invalid HEAD: commit {} does not exist",
-        &prev_commit_id
-    ))?;
-    Ok(CommitBuilder::from_commit(&prev_commit, message, patch))
+#[tonic::async_trait]
+trait StorageExclusiveGuardExt: StorageExclusiveGuard + Sync
+where
+    Error: From<Self::Error>,
+{
+    async fn build_commit_from_head(&mut self, message: String, patch: PatchStr) -> Result<CommitBuilder, Error> {
+        let prev_commit_id = self.load_head().await?;
+        let prev_commit = self.load_commit(&prev_commit_id).await?.ok_or(format!(
+            "invalid HEAD: commit {} does not exist",
+            &prev_commit_id
+        ))?;
+        Ok(CommitBuilder::from_commit(&prev_commit, message, patch))
+    }
 }
+
+impl<T: StorageExclusiveGuard + Sync> StorageExclusiveGuardExt for T
+where Error: From<T::Error>,
+{}
 
 #[cfg(test)]
 mod test {

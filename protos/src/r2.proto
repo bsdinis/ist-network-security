@@ -74,10 +74,9 @@ message SquashRequest {
 	// true means positive vote, false means negative/cancel vote
 	bool vote = 1;
 	string document_id = 2;
-	string from_commit_id = 3;
-	string to_commit_id = 4;
-	repeated string dropped_commit_ids = 5;
-	Commit squashed_commit = 6;
+	// must be ordered (first to last)
+	repeated string dropped_commit_ids = 3;
+	Commit squashed_commit = 4;
 }
 
 message SquashResponse {
