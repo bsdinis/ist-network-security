@@ -3,13 +3,13 @@ syntax = "proto3";
 package r2_identity;
 
 message GetCertificateRequest {
-    bytes pubkey = 1;
+    bytes pubkey_fingerprint = 1;
 }
 
 message GetCertificateResponse {
     bytes certificate = 1;
 }
 
-service Identity { 
+service Identity {
     rpc get_certificate(GetCertificateRequest) returns (GetCertificateResponse);
 }

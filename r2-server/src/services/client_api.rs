@@ -52,6 +52,14 @@ impl ClientApi for ClientApiService {
         Err(Status::unimplemented("hold up, not yet"))
     }
 
+    async fn get_collaborators(
+        &self,
+        request: Request<GetCollaboratorsRequest>,
+    ) -> Result<Response<GetCollaboratorsResponse>, Status> {
+        eprintln!("not implemented: request was {:#?}", request);
+        Err(Status::unimplemented("hold up, not yet"))
+    }
+
     async fn squash(
         &self,
         request: Request<SquashRequest>,
