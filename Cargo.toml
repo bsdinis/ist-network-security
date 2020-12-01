@@ -5,4 +5,5 @@ members = [
 	"r2-client",
 	"r2-server",
 	"r2-identity",
+	"test-ca-setup",
 ]
