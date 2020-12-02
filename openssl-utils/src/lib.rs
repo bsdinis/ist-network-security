@@ -31,6 +31,7 @@ pub enum CryptoErr {
     Expired,
     MessageTooBig,
     BadKeySize,
+    InvalidSignature,
 }
 
 impl From<ErrorStack> for CryptoErr {
@@ -51,6 +52,7 @@ impl fmt::Display for CryptoErr {
                 write!(f, "Too many common name fields in certificate")
             }
             CryptoErr::BadKeySize => write!(f, "Bad Key Size"),
+            CryptoErr::InvalidSignature => write!(f, "Signature is invalid"),
             CryptoErr::OpensslError(e) => write!(f, "OpenSSL error: {}", e),
         }
     }

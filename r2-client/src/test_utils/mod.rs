@@ -1,35 +1,85 @@
-pub mod signature_keys {
-    use crate::sigkey::new_unparsed_public_key;
-    use ring::signature::{KeyPair, RsaKeyPair, UnparsedPublicKey};
+pub mod certs {
+    use openssl::pkey::Private;
+    use openssl::rsa::Rsa;
+    use openssl::x509::X509;
+    use openssl_utils::{ValidCertificate, X509Ext};
 
-    pub static RAW_RSA_KEYPAIR_A: &'static [u8] = include_bytes!("rsa_keypair_a.pk8");
-    pub static RAW_RSA_KEYPAIR_B: &'static [u8] = include_bytes!("rsa_keypair_b.pk8");
+    pub const RAW_CA_CERT: &[u8] = include_bytes!("ca.cert.pem");
+    pub const RAW_CLIENT_A_AUTH_KEY: &[u8] = include_bytes!("clientA-auth.key.pem");
+    pub const RAW_CLIENT_A_AUTH_CERT: &[u8] = include_bytes!("clientA-auth.cert.pem");
+    pub const RAW_CLIENT_A_SIGN_KEY: &[u8] = include_bytes!("clientA-sign.key.pem");
+    pub const RAW_CLIENT_A_SIGN_CERT: &[u8] = include_bytes!("clientA-sign.cert.pem");
+    pub const RAW_CLIENT_B_AUTH_KEY: &[u8] = include_bytes!("clientB-auth.key.pem");
+    pub const RAW_CLIENT_B_AUTH_CERT: &[u8] = include_bytes!("clientB-auth.cert.pem");
+    pub const RAW_CLIENT_B_SIGN_KEY: &[u8] = include_bytes!("clientB-sign.key.pem");
+    pub const RAW_CLIENT_B_SIGN_CERT: &[u8] = include_bytes!("clientB-sign.cert.pem");
 
     lazy_static! {
-        pub static ref RSA_KEYPAIR_A: RsaKeyPair =
-            RsaKeyPair::from_pkcs8(RAW_RSA_KEYPAIR_A).unwrap();
-        pub static ref RSA_KEYPAIR_B: RsaKeyPair =
-            RsaKeyPair::from_pkcs8(RAW_RSA_KEYPAIR_B).unwrap();
-        pub static ref RAW_RSA_PUBKEY_A: Vec<u8> = RSA_KEYPAIR_A.public_key().as_ref().to_owned();
-        pub static ref RAW_RSA_PUBKEY_B: Vec<u8> = RSA_KEYPAIR_B.public_key().as_ref().to_owned();
-        pub static ref RSA_PUBKEY_A: UnparsedPublicKey<Vec<u8>> =
-            new_unparsed_public_key(RAW_RSA_KEYPAIR_A.to_owned());
-        pub static ref RSA_PUBKEY_B: UnparsedPublicKey<Vec<u8>> =
-            new_unparsed_public_key(RAW_RSA_KEYPAIR_B.to_owned());
+        pub static ref CA_CERT: X509 = X509::from_pem(RAW_CA_CERT).unwrap();
+        pub static ref CLIENT_A_AUTH_KEY: Rsa<Private> =
+            Rsa::private_key_from_pem(RAW_CLIENT_A_AUTH_KEY).unwrap();
+        pub static ref CLIENT_A_AUTH_CERT: ValidCertificate =
+            X509::from_pem(RAW_CLIENT_A_AUTH_CERT)
+                .unwrap()
+                .validate(&*CA_CERT, &vec![])
+                .unwrap();
+        pub static ref CLIENT_A_SIGN_KEY: Rsa<Private> =
+            Rsa::private_key_from_pem(RAW_CLIENT_A_SIGN_KEY).unwrap();
+        pub static ref CLIENT_A_SIGN_CERT: ValidCertificate =
+            X509::from_pem(RAW_CLIENT_A_SIGN_CERT)
+                .unwrap()
+                .validate(&*CA_CERT, &vec![])
+                .unwrap();
+        pub static ref CLIENT_B_AUTH_KEY: Rsa<Private> =
+            Rsa::private_key_from_pem(RAW_CLIENT_B_AUTH_KEY).unwrap();
+        pub static ref CLIENT_B_AUTH_CERT: ValidCertificate =
+            X509::from_pem(RAW_CLIENT_B_AUTH_CERT)
+                .unwrap()
+                .validate(&*CA_CERT, &vec![])
+                .unwrap();
+        pub static ref CLIENT_B_SIGN_KEY: Rsa<Private> =
+            Rsa::private_key_from_pem(RAW_CLIENT_B_SIGN_KEY).unwrap();
+        pub static ref CLIENT_B_SIGN_CERT: ValidCertificate =
+            X509::from_pem(RAW_CLIENT_B_SIGN_CERT)
+                .unwrap()
+                .validate(&*CA_CERT, &vec![])
+                .unwrap();
     }
 }
 
 pub mod user {
-    use super::signature_keys::*;
-    use crate::model::User;
+    use super::certs::*;
+    use crate::model::{Collaborator, CommitSigner};
 
     lazy_static! {
-        pub static ref USER_A: User =
-            User::new_with_pkcs8_keypair("aid".to_owned(), "A".to_owned(), RAW_RSA_KEYPAIR_A)
-                .unwrap();
-        pub static ref USER_B: User =
-            User::new_with_pkcs8_keypair("bid".to_owned(), "B".to_owned(), RAW_RSA_KEYPAIR_B)
-                .unwrap();
+        pub static ref COMMIT_SIGNER_A: CommitSigner = CommitSigner::from_certificate(
+            CLIENT_A_SIGN_CERT.to_owned(),
+            Some(CLIENT_A_SIGN_KEY.to_owned())
+        )
+        .unwrap();
+        pub static ref COMMIT_SIGNER_A_VERIFY_ONLY: CommitSigner =
+            CommitSigner::from_certificate(CLIENT_A_SIGN_CERT.to_owned(), None).unwrap();
+        pub static ref COMMIT_SIGNER_B: CommitSigner = CommitSigner::from_certificate(
+            CLIENT_B_SIGN_CERT.to_owned(),
+            Some(CLIENT_B_SIGN_KEY.to_owned())
+        )
+        .unwrap();
+        pub static ref COMMIT_SIGNER_B_VERIFY_ONLY: CommitSigner =
+            CommitSigner::from_certificate(CLIENT_B_SIGN_CERT.to_owned(), None).unwrap();
+        pub static ref COLLABORATOR_A: Collaborator = Collaborator::from_certificate(
+            CLIENT_A_AUTH_CERT.to_owned(),
+            Some(CLIENT_A_AUTH_KEY.to_owned())
+        )
+        .unwrap();
+        pub static ref COLLABORATOR_A_VERIFY_ONLY: Collaborator =
+            Collaborator::from_certificate(CLIENT_A_AUTH_CERT.to_owned(), None).unwrap();
+        pub static ref COLLABORATOR_B: Collaborator = Collaborator::from_certificate(
+            CLIENT_B_AUTH_CERT.to_owned(),
+            Some(CLIENT_B_AUTH_KEY.to_owned())
+        )
+        .unwrap();
+        pub static ref COLLABORATOR_B_VERIFY_ONLY: Collaborator =
+            Collaborator::from_certificate(CLIENT_B_AUTH_CERT.to_owned(), None).unwrap();
     }
 }
 
@@ -49,20 +99,20 @@ pub mod patch {
 
 pub mod commit {
     use super::patch::{PATCH_A_B, PATCH_EMPTY_A};
-    use super::user::{USER_A, USER_B};
+    use super::user::{COMMIT_SIGNER_A, COMMIT_SIGNER_B};
     use crate::model::{Commit, CommitBuilder};
 
     lazy_static! {
         pub static ref COMMIT_0: Commit =
             CommitBuilder::root_commit("initial commit".to_owned(), PATCH_EMPTY_A.to_owned())
-                .author(&*USER_A)
+                .author(&*COMMIT_SIGNER_A)
                 .unwrap();
         pub static ref COMMIT_1: Commit = CommitBuilder::from_commit(
             &*COMMIT_0,
             "fixing A's stuff".to_owned(),
             PATCH_A_B.to_owned()
         )
-        .author(&*USER_B)
+        .author(&*COMMIT_SIGNER_B)
         .unwrap();
     }
 }

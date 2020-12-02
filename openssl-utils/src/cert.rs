@@ -2,6 +2,7 @@ use super::{CryptoErr, KeyUsage};
 use openssl::nid::Nid;
 use openssl::x509::*;
 
+#[derive(Clone)]
 pub struct ValidCertificate {
     pub cert: X509,
     _priv: (),
@@ -17,6 +18,8 @@ pub trait X509Ext {
         ca_cert: &X509,
         required_key_usages: &[KeyUsage],
     ) -> Result<ValidCertificate, CryptoErr>;
+
+    unsafe fn validate_unchecked(self) -> ValidCertificate;
 }
 
 impl X509Ext for X509 {
@@ -90,6 +93,13 @@ impl X509Ext for X509 {
             cert: self,
             _priv: (),
         })
+    }
+
+    unsafe fn validate_unchecked(self) -> ValidCertificate {
+        ValidCertificate {
+            cert: self,
+            _priv: (),
+        }
     }
 }
 

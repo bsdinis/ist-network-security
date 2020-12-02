@@ -12,7 +12,7 @@ pub trait Storage {
 }
 
 #[tonic::async_trait]
-pub trait StorageSharedGuard: Drop {
+pub trait StorageSharedGuard: Drop + Send {
     type Error;
 
     /// Load a persisted commit from repo

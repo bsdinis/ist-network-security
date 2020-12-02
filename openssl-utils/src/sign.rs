@@ -17,7 +17,7 @@ pub trait SignatureVerifier {
         signature: &[u8],
         message: &[u8],
         ts: DateTime<T>,
-    ) -> Result<bool, CryptoErr>;
+    ) -> Result<(), CryptoErr>;
 }
 
 pub trait Signer {
@@ -31,7 +31,7 @@ impl SignatureVerifier for ValidCertificate {
         signature: &[u8],
         message: &[u8],
         ts: DateTime<T>,
-    ) -> Result<bool, CryptoErr> {
+    ) -> Result<(), CryptoErr> {
         // check cert expiration
         let not_before = self.cert.not_before();
         let ts = Asn1Time::from_unix(ts.timestamp())?;
@@ -52,7 +52,11 @@ impl SignatureVerifier for ValidCertificate {
 
         let hashed_msg = hash_message(message)?;
 
-        Ok(hashed_msg == decrypted_sig)
+        if hashed_msg == decrypted_sig {
+            Ok(())
+        } else {
+            Err(CryptoErr::InvalidSignature)
+        }
     }
 }
 
@@ -108,5 +112,27 @@ mod test {
         serv_key_cert_val
             .validate_rsa_sig(&signature, message, chrono::offset::Local::now())
             .unwrap();
+    }
+
+    #[test]
+    fn val_sign_serv_err() {
+        // sign message with server prviate key
+        let server_key = SERV_KEY.to_owned();
+        let message = &[7, 23, 71];
+        let mut signature = server_key.sign(message).unwrap();
+
+        // get and validate certificate
+        let ca_cert = CA_CERT.to_owned();
+        let server_key_cert = SERV_CERT.to_owned();
+        let serv_key_cert_val = server_key_cert
+            .validate(&ca_cert, &[KeyUsage::DigitalSignature])
+            .unwrap();
+
+        signature.swap(0, 1);
+
+        // validate signature must fail
+        assert!(serv_key_cert_val
+            .validate_rsa_sig(&signature, message, chrono::offset::Local::now())
+            .is_err());
     }
 }

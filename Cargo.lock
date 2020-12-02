@@ -982,7 +982,9 @@ dependencies = [
  "diffy",
  "fs2",
  "lazy_static",
- "ring",
+ "openssl",
+ "openssl-utils",
+ "protos",
  "serde",
  "tempdir",
  "tokio",
@@ -995,6 +997,7 @@ name = "r2-identity"
 version = "0.1.0"
 dependencies = [
  "argh",
+ "openssl",
  "protos",
  "tokio",
  "tonic",

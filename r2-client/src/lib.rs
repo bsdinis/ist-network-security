@@ -3,7 +3,6 @@ extern crate lazy_static;
 
 mod model;
 mod persistence;
-mod sigkey;
 #[cfg(test)]
 mod test_utils;
 
@@ -69,7 +68,7 @@ where
                 .await?;
 
             let ucommit = storage.build_commit_from_head(message, patch).await?;
-            let author = storage.get_own_user().await?;
+            let author = storage.get_commit_signer_me().await?;
             ucommit.author(&author)?
         };
 
@@ -79,7 +78,7 @@ where
         Ok(commit)
     }
 
-    /// Rewind HEAD
+    /// Move HEAD
     pub async fn reset(&self, rev: RichRevisionId, softness: ResetHardness) -> Result<(), Error> {
         use RichRevisionId::*;
         let mut storage = self.storage.try_exclusive()?;
@@ -215,7 +214,7 @@ where
         Ok(commit_id)
     }
 
-    async fn get_own_user(&self) -> Result<User, Error> {
+    async fn get_commit_signer_me(&self) -> Result<CommitSigner, Error> {
         unimplemented!()
     }
 }
