@@ -5,10 +5,10 @@ use openssl::hash::{hash, MessageDigest};
 use openssl::pkey::Private;
 use openssl::rsa::{Padding, Rsa};
 
-const PADDING: Padding = Padding::PKCS1_PSS;
+const PADDING: Padding = Padding::PKCS1;
 
 pub trait SignatureVerifier {
-    /// Validate a message signature (SHA3-512/RSA/PKCS1-PSS)
+    /// Validate a message signature (SHA3-512/RSA/PKCS1)
     ///
     /// Signature could only be created by the holder of the private key.
     /// A timestamp must be provided to check certificate expiration.
@@ -21,7 +21,7 @@ pub trait SignatureVerifier {
 }
 
 pub trait Signer {
-    /// Sign a message using SHA3-512/RSA/PKCS1-PSS
+    /// Sign a message using SHA3-512/RSA/PKCS1
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, CryptoErr>;
 }
 
@@ -72,4 +72,41 @@ fn hash_message(message: &[u8]) -> Result<Vec<u8>, CryptoErr> {
     let hashed = hash(MessageDigest::sha3_512(), message)?.to_vec();
 
     Ok(hashed)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use lazy_static::lazy_static;
+    use openssl::rsa::Rsa;
+    use openssl::x509::X509;
+
+    lazy_static! {
+        static ref CA_CERT: X509 =
+            X509::from_pem(include_bytes!("test_certs/ca.cert.pem")).unwrap();
+        static ref SERV_CERT: X509 =
+            X509::from_pem(include_bytes!("test_certs/server.cert.pem")).unwrap();
+        static ref SERV_KEY: Rsa<Private> =
+            Rsa::private_key_from_pem(include_bytes!("test_certs/server.key.pem")).unwrap();
+    }
+
+    #[test]
+    fn val_sign_serv() {
+        // sign message with server prviate key
+        let server_key = SERV_KEY.to_owned();
+        let message = &[7, 23, 71];
+        let signature = server_key.sign(message).unwrap();
+
+        // get and validate certificate
+        let ca_cert = CA_CERT.to_owned();
+        let server_key_cert = SERV_CERT.to_owned();
+        let serv_key_cert_val = server_key_cert
+            .validate(&ca_cert, &[KeyUsage::DigitalSignature])
+            .unwrap();
+
+        // validate signature
+        serv_key_cert_val
+            .validate_rsa_sig(&signature, message, chrono::offset::Local::now())
+            .unwrap();
+    }
 }

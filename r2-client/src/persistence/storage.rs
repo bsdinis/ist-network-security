@@ -32,7 +32,11 @@ pub trait StorageSharedGuard: Drop {
 
     /// Drops lock, consuming this guard object
     // no default implementation because the compiler is not smart enough
-    fn unlock(self) where Self: Sized {}
+    fn unlock(self)
+    where
+        Self: Sized,
+    {
+    }
 }
 
 #[tonic::async_trait]
@@ -53,17 +57,19 @@ pub trait StorageExclusiveGuard: StorageSharedGuard {
 #[cfg(test)]
 #[macro_use]
 pub mod test {
-    use super::{Storage, StorageSharedGuard, StorageExclusiveGuard};
-    use std::fmt::Debug;
+    use super::{Storage, StorageExclusiveGuard, StorageSharedGuard};
     use crate::model::Snapshot;
     use crate::test_utils::commit::*;
+    use std::fmt::Debug;
     use std::mem;
 
     pub struct StorageTester<T: Storage>(T)
-    where T::Error: Debug;
+    where
+        T::Error: Debug;
 
     impl<T: Storage> From<T> for StorageTester<T>
-    where T::Error: Debug,
+    where
+        T::Error: Debug,
     {
         fn from(storage: T) -> Self {
             StorageTester(storage)
@@ -71,7 +77,8 @@ pub mod test {
     }
 
     impl<T: Storage> StorageTester<T>
-    where T::Error: Debug
+    where
+        T::Error: Debug,
     {
         pub fn new(storage: T) -> Self {
             storage.into()

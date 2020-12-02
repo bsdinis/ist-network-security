@@ -171,7 +171,10 @@ impl_shared!(FilesystemStorageExclusiveGuard);
 
 #[tonic::async_trait]
 impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
-    async fn save_commit(&mut self, commit: &Commit) -> Result<(), <Self as StorageSharedGuard>::Error> {
+    async fn save_commit(
+        &mut self,
+        commit: &Commit,
+    ) -> Result<(), <Self as StorageSharedGuard>::Error> {
         let commit_file_path = commit_path(&self.root, &commit.id);
 
         fs::DirBuilder::new()
@@ -185,17 +188,26 @@ impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
         Ok(())
     }
 
-    async fn save_head(&mut self, commit_id: &str) -> Result<(), <Self as StorageSharedGuard>::Error> {
+    async fn save_head(
+        &mut self,
+        commit_id: &str,
+    ) -> Result<(), <Self as StorageSharedGuard>::Error> {
         fs::write(head_path(&self.root), commit_id).await?;
         Ok(())
     }
 
-    async fn save_remote_head(&mut self, commit_id: &str) -> Result<(), <Self as StorageSharedGuard>::Error> {
+    async fn save_remote_head(
+        &mut self,
+        commit_id: &str,
+    ) -> Result<(), <Self as StorageSharedGuard>::Error> {
         fs::write(remote_head_path(&self.root), commit_id).await?;
         Ok(())
     }
 
-    async fn save_current_snapshot(&mut self, content: &Snapshot) -> Result<(), <Self as StorageSharedGuard>::Error> {
+    async fn save_current_snapshot(
+        &mut self,
+        content: &Snapshot,
+    ) -> Result<(), <Self as StorageSharedGuard>::Error> {
         fs::write(&self.file_path, content).await?;
         Ok(())
     }

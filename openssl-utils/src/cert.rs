@@ -92,20 +92,97 @@ impl X509Ext for X509 {
         })
     }
 }
-/*
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use x509::pem::{};
+    use openssl::x509::X509;
 
-    #[test]
-    fn smth_ok() {
+    fn get_ca_cert() -> X509 {
         let ca_cert_pem = include_bytes!("test_certs/ca.cert.pem");
-        let ca_cert: X509Certificate = parse_x509_certificate(ca_cert_pem).unwrap();
+        X509::from_pem(ca_cert_pem).unwrap()
     }
 
-    #[test]
-    fn smth_bad() {
+    macro_rules! validate_ok_test {
+        ($id:ident, $file:expr, $usages:expr) => {
+            #[test]
+            fn $id() {
+                let ca_cert = get_ca_cert();
 
+                let cert_pem = include_bytes!($file);
+                let cert: X509 = X509::from_pem(cert_pem).unwrap();
+
+                cert.validate(&ca_cert, $usages).unwrap();
+            }
+        };
     }
-}*/
+
+    macro_rules! validate_nok_test {
+        ($id:ident, $file:expr, $usages:expr) => {
+            #[test]
+            fn $id() {
+                let ca_cert = get_ca_cert();
+
+                let cert_pem = include_bytes!($file);
+                let cert: X509 = X509::from_pem(cert_pem).unwrap();
+
+                assert!(cert.validate(&ca_cert, $usages).is_err());
+            }
+        };
+    }
+
+    macro_rules! common_name_test {
+        ($id:ident, $file:expr, $name:expr) => {
+            #[test]
+            fn $id() {
+                let cl_auth_cert_pem = include_bytes!($file);
+                let cl_auth_cert: X509 = X509::from_pem(cl_auth_cert_pem).unwrap();
+                assert_eq!($name, cl_auth_cert.common_name().unwrap());
+            }
+        };
+    }
+
+    validate_ok_test!(
+        val_cl_auth_cert_ok,
+        "test_certs/client-auth.cert.pem",
+        &[
+            KeyUsage::DigitalSignature,
+            KeyUsage::KeyAgreement,
+            KeyUsage::KeyEncipherment
+        ]
+    );
+    validate_ok_test!(
+        val_cl_sign_cert_ok,
+        "test_certs/client-sign.cert.pem",
+        &[KeyUsage::DigitalSignature, KeyUsage::NonRepudiation]
+    );
+    validate_ok_test!(
+        val_serv_cert_ok,
+        "test_certs/server.cert.pem",
+        &[
+            KeyUsage::DigitalSignature,
+            KeyUsage::KeyAgreement,
+            KeyUsage::KeyEncipherment
+        ]
+    );
+
+    validate_nok_test!(
+        val_cl_auth_cert_nok,
+        "test_certs/client-auth.cert.pem",
+        &[KeyUsage::NonRepudiation]
+    );
+    validate_nok_test!(
+        val_cl_sign_cert_nok,
+        "test_certs/client-sign.cert.pem",
+        &[KeyUsage::DigitalSignature, KeyUsage::KeyAgreement]
+    );
+    validate_nok_test!(
+        val_serv_cert_nok,
+        "test_certs/server.cert.pem",
+        &[KeyUsage::NonRepudiation]
+    );
+
+    common_name_test!(cl_auth_cn, "test_certs/client-auth.cert.pem", "client-auth");
+    common_name_test!(cl_sign_cn, "test_certs/client-sign.cert.pem", "client-sign");
+    common_name_test!(server_cn, "test_certs/server.cert.pem", "server");
+}

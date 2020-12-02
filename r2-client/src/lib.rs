@@ -132,7 +132,6 @@ where
     pub async fn push(&self) -> Result<(), Error> {
         unimplemented!()
     }
-
 }
 
 #[tonic::async_trait]
@@ -221,16 +220,18 @@ where
     }
 }
 
-impl<T: StorageSharedGuard + Sync> StorageSharedGuardExt for T
-where Error: From<T::Error>,
-{}
+impl<T: StorageSharedGuard + Sync> StorageSharedGuardExt for T where Error: From<T::Error> {}
 
 #[tonic::async_trait]
 trait StorageExclusiveGuardExt: StorageExclusiveGuard + Sync
 where
     Error: From<Self::Error>,
 {
-    async fn build_commit_from_head(&mut self, message: String, patch: PatchStr) -> Result<CommitBuilder, Error> {
+    async fn build_commit_from_head(
+        &mut self,
+        message: String,
+        patch: PatchStr,
+    ) -> Result<CommitBuilder, Error> {
         let prev_commit_id = self.load_head().await?;
         let prev_commit = self.load_commit(&prev_commit_id).await?.ok_or(format!(
             "invalid HEAD: commit {} does not exist",
@@ -240,9 +241,7 @@ where
     }
 }
 
-impl<T: StorageExclusiveGuard + Sync> StorageExclusiveGuardExt for T
-where Error: From<T::Error>,
-{}
+impl<T: StorageExclusiveGuard + Sync> StorageExclusiveGuardExt for T where Error: From<T::Error> {}
 
 #[cfg(test)]
 mod test {

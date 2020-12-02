@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use openssl::rand::rand_bytes;
 use openssl::symm::{decrypt_aead, encrypt_aead, Cipher};
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
 
 lazy_static! {
     static ref CIPHER: Cipher = Cipher::aes_256_gcm();
@@ -12,7 +13,7 @@ pub const KEY_SIZE: usize = 32; // 256 bit
 pub const TAG_SIZE: usize = 16;
 pub const NONCE_SIZE: usize = 12;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct AeadKey([u8; KEY_SIZE]);
 
 #[derive(Debug, PartialEq, Clone)]
@@ -38,13 +39,21 @@ impl AeadKey {
         Ok(AeadKey(key))
     }
 
-    pub fn from_existing_key(key: [u8; KEY_SIZE]) -> Self {
-        AeadKey(key)
+    pub fn from_existing_key(key: &[u8]) -> Result<Self, CryptoErr> {
+        let key = key.try_into().map_err(|_| CryptoErr::BadKeySize)?;
+        Ok(AeadKey(key))
     }
 
     pub fn seal(&self, unsealed: UnsealedSecretBox) -> Result<SealedSecretBox, CryptoErr> {
         let mut tag = [0u8; TAG_SIZE];
-        let ciphertext = encrypt_aead(CIPHER.to_owned(), &self.0, Some(&unsealed.nonce), &unsealed.aad, &unsealed.plaintext, &mut tag)?;
+        let ciphertext = encrypt_aead(
+            CIPHER.to_owned(),
+            &self.0,
+            Some(&unsealed.nonce),
+            &unsealed.aad,
+            &unsealed.plaintext,
+            &mut tag,
+        )?;
 
         Ok(SealedSecretBox {
             nonce: unsealed.nonce,
@@ -55,12 +64,25 @@ impl AeadKey {
     }
 
     pub fn unseal(&self, sealed: SealedSecretBox) -> Result<UnsealedSecretBox, CryptoErr> {
-        let plaintext = decrypt_aead(CIPHER.to_owned(), &self.0, Some(&sealed.nonce), &sealed.aad, &sealed.ciphertext, &sealed.tag)?;
+        let plaintext = decrypt_aead(
+            CIPHER.to_owned(),
+            &self.0,
+            Some(&sealed.nonce),
+            &sealed.aad,
+            &sealed.ciphertext,
+            &sealed.tag,
+        )?;
         Ok(UnsealedSecretBox {
             nonce: sealed.nonce,
             plaintext,
             aad: sealed.aad,
         })
+    }
+}
+
+impl AsRef<[u8]> for AeadKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
     }
 }
 
