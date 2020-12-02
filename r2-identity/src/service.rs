@@ -19,10 +19,10 @@ impl Identity for IdentityService {
         &self,
         request: Request<GetCertificateRequest>,
     ) -> Result<Response<GetCertificateResponse>, Status> {
-        let pubkey = request.into_inner().pubkey;
+        let pubkey_fingerprint = request.into_inner().pubkey_fingerprint;
         let certificate = self
             .map
-            .get(&pubkey)
+            .get(&pubkey_fingerprint)
             .ok_or(Status::not_found("Cert not found"))?
             .to_owned();
 

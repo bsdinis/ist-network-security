@@ -2,12 +2,18 @@ use argh::FromArgs;
 use protos::identity_server::IdentityServer;
 use service::IdentityService;
 use std::collections::HashMap;
-use std::io::{self, BufReader, Read, Seek, SeekFrom};
+use std::fs;
+use std::io;
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use tonic::transport::Server;
 
+use openssl::hash::{hash, MessageDigest};
+use openssl::x509::X509;
+
 mod service;
+
+type Error = Box<dyn std::error::Error>;
 
 /// Options
 #[derive(FromArgs)]
@@ -25,36 +31,27 @@ fn load_certs(options: &Options) -> HashMap<Vec<u8>, Vec<u8>> {
     let mut map = HashMap::new();
 
     for cert_path in &options.cert_paths {
-        let file = std::fs::File::open(cert_path)
-            .expect(&format!("Failed to open certificate {:?}", cert_path));
+        let (pubkey_fingerprint, cert_bytes) =
+            load_cert(cert_path).expect(&format!("Failed to load certificate {:?}", cert_path));
 
-        let mut reader = BufReader::new(file);
-
-        let cert = x509_parser::pem::Pem::read(&mut reader)
-            .expect(&format!("Bad certificate {:?}", cert_path));
-        let cert = cert
-            .0
-            .parse_x509()
-            .expect(&format!("Bad certificate {:?}", cert_path));
-        reader.seek(SeekFrom::Start(0)).unwrap();
-
-        let mut cert_bytes: Vec<u8> = Vec::new();
-        reader.read_to_end(&mut cert_bytes).unwrap();
-
-        let pubkey = cert
-            .tbs_certificate
-            .subject_pki
-            .subject_public_key
-            .as_ref()
-            .to_owned();
-
-        map.insert(pubkey, cert_bytes);
+        map.insert(pubkey_fingerprint, cert_bytes);
     }
     map
 }
 
+fn load_cert(path: &PathBuf) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    let cert_bytes = fs::read(path)?;
+    let cert = X509::from_pem(&cert_bytes)?;
+
+    let pubkey_bytes = cert.public_key()?.rsa()?.public_key_to_der()?;
+
+    let pubkey_fingerprint = hash(MessageDigest::sha3_256(), &pubkey_bytes)?.to_vec();
+
+    Ok((pubkey_fingerprint, cert_bytes))
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Error> {
     let options: Options = argh::from_env();
     let map = load_certs(&options);
 
