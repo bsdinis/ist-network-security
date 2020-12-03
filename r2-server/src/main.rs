@@ -8,7 +8,7 @@ use protos::client_api_server::ClientApiServer;
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
 pub mod services;
-use services::client_api::ClientApiService;
+use services::service::ClientApiService;
 
 /// Tokio Rustls server example
 #[derive(FromArgs)]
