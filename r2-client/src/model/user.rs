@@ -4,17 +4,12 @@ use openssl_utils::*;
 use openssl::rsa::Rsa;
 use openssl::pkey::Private;
 use openssl::x509::X509;
-use openssl::hash::{hash, MessageDigest};
 use chrono::{DateTime, TimeZone};
 
 use serde::{Deserialize, Serialize};
 
 const COLLABORATOR_KEY_USAGES: [KeyUsage; 1] = [KeyUsage::KeyEncipherment];
 const COMMIT_SIGNER_KEY_USAGES: [KeyUsage; 2] = [KeyUsage::DigitalSignature, KeyUsage::NonRepudiation];
-
-lazy_static! {
-    static ref ID_DIGEST_ALGO: MessageDigest = MessageDigest::sha3_256();
-}
 
 /// A document collaborator (as viewed by a remote)
 ///
@@ -68,9 +63,7 @@ pub struct UnverifiedCommitSigner {
 
 impl Collaborator {
     pub fn from_certificate(auth_certificate: ValidCertificate, auth_private_key: Option<Rsa<Private>>) -> Result<Self, CryptoErr> {
-        let auth_pubkey = auth_certificate.cert.public_key()?.public_key_to_der()?;
-        let id = hash(ID_DIGEST_ALGO.to_owned(), &auth_pubkey)?.to_vec();
-
+        let id = auth_certificate.pubkey_fingerprint()?;
         let name = auth_certificate.cert.common_name()?;
 
         Ok(Collaborator {
@@ -109,9 +102,7 @@ impl UnverifiedCollaborator {
 
 impl CommitSigner {
     pub fn from_certificate(sign_certificate: ValidCertificate, sign_private_key: Option<Rsa<Private>>) -> Result<Self, CryptoErr> {
-        let sign_pubkey = sign_certificate.cert.public_key()?.public_key_to_der()?;
-        let id = hash(ID_DIGEST_ALGO.to_owned(), &sign_pubkey)?.to_vec();
-
+        let id = sign_certificate.pubkey_fingerprint()?;
         let name = sign_certificate.cert.common_name()?;
 
         Ok(CommitSigner {

@@ -1,6 +1,12 @@
 use super::{CryptoErr, KeyUsage};
 use openssl::nid::Nid;
 use openssl::x509::*;
+use openssl::hash::{hash, MessageDigest};
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref PUBKEY_DIGEST_ALGO: MessageDigest = MessageDigest::sha3_256();
+}
 
 #[derive(Clone)]
 pub struct ValidCertificate {
@@ -20,6 +26,8 @@ pub trait X509Ext {
     ) -> Result<ValidCertificate, CryptoErr>;
 
     unsafe fn validate_unchecked(self) -> ValidCertificate;
+
+    fn pubkey_fingerprint(&self) -> Result<Vec<u8>, CryptoErr>;
 }
 
 impl X509Ext for X509 {
@@ -100,6 +108,39 @@ impl X509Ext for X509 {
             cert: self,
             _priv: (),
         }
+    }
+
+    fn pubkey_fingerprint(&self) -> Result<Vec<u8>, CryptoErr> {
+        let pubkey = self.public_key()?.public_key_to_der()?;
+        let fingerprint = hash(PUBKEY_DIGEST_ALGO.to_owned(), &pubkey)?
+            .to_vec();
+        Ok(fingerprint)
+    }
+}
+
+impl X509Ext for ValidCertificate {
+    fn key_can(&self, usage: &[KeyUsage]) -> Result<(), CryptoErr> {
+        self.cert.key_can(usage)
+    }
+
+    fn common_name(&self) -> Result<String, CryptoErr> {
+        self.cert.common_name()
+    }
+
+    fn validate(
+        self,
+        ca_cert: &X509,
+        required_key_usages: &[KeyUsage],
+    ) -> Result<ValidCertificate, CryptoErr> {
+        self.cert.validate(ca_cert, required_key_usages)
+    }
+
+    unsafe fn validate_unchecked(self) -> ValidCertificate {
+        self
+    }
+
+    fn pubkey_fingerprint(&self) -> Result<Vec<u8>, CryptoErr> {
+        self.cert.pubkey_fingerprint()
     }
 }
 
