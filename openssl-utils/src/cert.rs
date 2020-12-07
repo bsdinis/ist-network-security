@@ -1,8 +1,8 @@
 use super::{CryptoErr, KeyUsage};
+use lazy_static::lazy_static;
+use openssl::hash::{hash, MessageDigest};
 use openssl::nid::Nid;
 use openssl::x509::*;
-use openssl::hash::{hash, MessageDigest};
-use lazy_static::lazy_static;
 
 lazy_static! {
     static ref PUBKEY_DIGEST_ALGO: MessageDigest = MessageDigest::sha3_256();
@@ -112,8 +112,7 @@ impl X509Ext for X509 {
 
     fn pubkey_fingerprint(&self) -> Result<Vec<u8>, CryptoErr> {
         let pubkey = self.public_key()?.public_key_to_der()?;
-        let fingerprint = hash(PUBKEY_DIGEST_ALGO.to_owned(), &pubkey)?
-            .to_vec();
+        let fingerprint = hash(PUBKEY_DIGEST_ALGO.to_owned(), &pubkey)?.to_vec();
         Ok(fingerprint)
     }
 }

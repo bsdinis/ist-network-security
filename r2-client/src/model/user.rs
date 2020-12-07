@@ -1,15 +1,16 @@
 use std::convert::TryFrom;
 
-use openssl_utils::*;
-use openssl::rsa::Rsa;
-use openssl::pkey::Private;
-use openssl::x509::X509;
 use chrono::{DateTime, TimeZone};
+use openssl::pkey::Private;
+use openssl::rsa::Rsa;
+use openssl::x509::X509;
+use openssl_utils::*;
 
 use serde::{Deserialize, Serialize};
 
 const COLLABORATOR_KEY_USAGES: [KeyUsage; 1] = [KeyUsage::KeyEncipherment];
-const COMMIT_SIGNER_KEY_USAGES: [KeyUsage; 2] = [KeyUsage::DigitalSignature, KeyUsage::NonRepudiation];
+const COMMIT_SIGNER_KEY_USAGES: [KeyUsage; 2] =
+    [KeyUsage::DigitalSignature, KeyUsage::NonRepudiation];
 
 /// A document collaborator (as viewed by a remote)
 ///
@@ -62,7 +63,10 @@ pub struct UnverifiedCommitSigner {
 }
 
 impl Collaborator {
-    pub fn from_certificate(auth_certificate: ValidCertificate, auth_private_key: Option<Rsa<Private>>) -> Result<Self, CryptoErr> {
+    pub fn from_certificate(
+        auth_certificate: ValidCertificate,
+        auth_private_key: Option<Rsa<Private>>,
+    ) -> Result<Self, CryptoErr> {
         let id = auth_certificate.pubkey_fingerprint()?;
         let name = auth_certificate.cert.common_name()?;
 
@@ -81,7 +85,8 @@ impl UnverifiedCollaborator {
         let auth_certificate = X509::from_pem(&self.auth_certificate_pem)?
             .validate(ca_cert, &COLLABORATOR_KEY_USAGES)?;
 
-        let auth_private_key = self.auth_private_key_pem
+        let auth_private_key = self
+            .auth_private_key_pem
             .map(|raw| Rsa::private_key_from_pem(&raw))
             .transpose()?;
 
@@ -89,10 +94,10 @@ impl UnverifiedCollaborator {
     }
 
     pub unsafe fn verify_unchecked(self) -> Result<Collaborator, CryptoErr> {
-        let auth_certificate = X509::from_pem(&self.auth_certificate_pem)?
-            .validate_unchecked();
+        let auth_certificate = X509::from_pem(&self.auth_certificate_pem)?.validate_unchecked();
 
-        let auth_private_key = self.auth_private_key_pem
+        let auth_private_key = self
+            .auth_private_key_pem
             .map(|raw| Rsa::private_key_from_pem(&raw))
             .transpose()?;
 
@@ -101,7 +106,10 @@ impl UnverifiedCollaborator {
 }
 
 impl CommitSigner {
-    pub fn from_certificate(sign_certificate: ValidCertificate, sign_private_key: Option<Rsa<Private>>) -> Result<Self, CryptoErr> {
+    pub fn from_certificate(
+        sign_certificate: ValidCertificate,
+        sign_private_key: Option<Rsa<Private>>,
+    ) -> Result<Self, CryptoErr> {
         let id = sign_certificate.pubkey_fingerprint()?;
         let name = sign_certificate.cert.common_name()?;
 
@@ -120,7 +128,8 @@ impl UnverifiedCommitSigner {
         let sign_certificate = X509::from_pem(&self.sign_certificate_pem)?
             .validate(ca_cert, &COMMIT_SIGNER_KEY_USAGES)?;
 
-        let sign_private_key = self.sign_private_key_pem
+        let sign_private_key = self
+            .sign_private_key_pem
             .map(|raw| Rsa::private_key_from_pem(&raw))
             .transpose()?;
 
@@ -128,10 +137,10 @@ impl UnverifiedCommitSigner {
     }
 
     pub unsafe fn verify_unchecked(self) -> Result<CommitSigner, CryptoErr> {
-        let sign_certificate = X509::from_pem(&self.sign_certificate_pem)?
-            .validate_unchecked();
+        let sign_certificate = X509::from_pem(&self.sign_certificate_pem)?.validate_unchecked();
 
-        let sign_private_key = self.sign_private_key_pem
+        let sign_private_key = self
+            .sign_private_key_pem
             .map(|raw| Rsa::private_key_from_pem(&raw))
             .transpose()?;
 
@@ -156,8 +165,14 @@ impl KeyUnsealer for Collaborator {
 }
 
 impl SignatureVerifier for CommitSigner {
-    fn validate_rsa_sig<T: TimeZone>(&self, signature: &[u8], message: &[u8], ts: DateTime<T>) -> Result<(), CryptoErr> {
-        self.sign_certificate.validate_rsa_sig(signature, message, ts)
+    fn validate_rsa_sig<T: TimeZone>(
+        &self,
+        signature: &[u8],
+        message: &[u8],
+        ts: DateTime<T>,
+    ) -> Result<(), CryptoErr> {
+        self.sign_certificate
+            .validate_rsa_sig(signature, message, ts)
     }
 }
 
@@ -176,7 +191,8 @@ impl TryFrom<Collaborator> for UnverifiedCollaborator {
 
     fn try_from(user: Collaborator) -> Result<Self, Self::Error> {
         let auth_certificate_pem = user.auth_certificate.cert.to_pem()?;
-        let auth_private_key_pem = user.auth_private_key
+        let auth_private_key_pem = user
+            .auth_private_key
             .map(|key| key.private_key_to_pem())
             .transpose()?;
 

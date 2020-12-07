@@ -2,8 +2,8 @@ use super::snapshot::PatchStr;
 use super::user::CommitSigner;
 
 use chrono::{DateTime, Utc};
-use openssl_utils::{SignatureVerifier, Signer};
 use openssl::hash::{hash, MessageDigest};
+use openssl_utils::{SignatureVerifier, Signer};
 use serde::{Deserialize, Serialize};
 
 lazy_static! {
@@ -92,7 +92,8 @@ impl UnverifiedCommit {
         }
 
         let bytes = self.bytes(true);
-        author.validate_rsa_sig(&self.signature, &bytes, self.ts)
+        author
+            .validate_rsa_sig(&self.signature, &bytes, self.ts)
             .map_err(|e| format!("error validating commit siganture: {:?}", e))?;
 
         // Safety: we did check ^
@@ -200,7 +201,8 @@ impl CommitBuilder {
         commit.id = commit.gen_id()?;
 
         let bytes = commit.bytes(true);
-        commit.signature = author.sign(&bytes)
+        commit.signature = author
+            .sign(&bytes)
             .map_err(|e| format!("error signing commit: {:?}", e))?;
 
         // Safety: we built a well-formed commit
@@ -282,7 +284,10 @@ mod test {
         let ucommit0: UnverifiedCommit = COMMIT_0.to_owned().into();
         let ucommit1: UnverifiedCommit = COMMIT_1.to_owned().into();
 
-        let commit0 = ucommit0.clone().verify(&*COMMIT_SIGNER_A_VERIFY_ONLY).unwrap();
+        let commit0 = ucommit0
+            .clone()
+            .verify(&*COMMIT_SIGNER_A_VERIFY_ONLY)
+            .unwrap();
         assert_eq!(ucommit0.id, commit0.id);
         assert_eq!(ucommit0.author_id, commit0.author_id);
         assert_eq!(ucommit0.ts, commit0.ts);
