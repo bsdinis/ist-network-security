@@ -170,13 +170,19 @@ impl Me {
 }
 
 impl KeySealer for DocCollaborator {
-    fn seal_key(&self, key_plaintext: &AeadKey) -> Result<Vec<u8>, CryptoErr> {
+    fn seal_key(&self, key_plaintext: &AeadKey) -> Result<SealedAeadKey, CryptoErr> {
         self.auth_certificate.seal_key(key_plaintext)
     }
 }
 
+impl KeySealer for Me {
+    fn seal_key(&self, key_plaintext: &AeadKey) -> Result<SealedAeadKey, CryptoErr> {
+        self.auth_private_key.seal_key(key_plaintext)
+    }
+}
+
 impl KeyUnsealer for Me {
-    fn unseal_key(&self, key_ciphertext: &[u8]) -> Result<AeadKey, CryptoErr> {
+    fn unseal_key(&self, key_ciphertext: &SealedAeadKey) -> Result<AeadKey, CryptoErr> {
         self.auth_private_key.unseal_key(key_ciphertext)
     }
 }

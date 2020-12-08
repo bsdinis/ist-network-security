@@ -1,33 +1,46 @@
 use super::{AeadKey, CryptoErr, KeyUsage, ValidCertificate, X509Ext};
-use openssl::pkey::Private;
+use openssl::pkey::{HasPublic, Private};
 use openssl::rsa::{Padding, Rsa};
 
 const PADDING: Padding = Padding::PKCS1;
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct SealedAeadKey(pub Vec<u8>);
+
 pub trait KeyUnsealer {
     /// Unseals a key with RSA.
-    fn unseal_key(&self, key_ciphertext: &[u8]) -> Result<AeadKey, CryptoErr>;
+    fn unseal_key(&self, key_ciphertext: &SealedAeadKey) -> Result<AeadKey, CryptoErr>;
 }
 
 pub trait KeySealer {
     /// Seals a key with RSA.
     ///
     /// The key ciphertext can only be unsealed by the holder of the private key.
-    fn seal_key(&self, key_plaintext: &AeadKey) -> Result<Vec<u8>, CryptoErr>;
+    fn seal_key(&self, key_plaintext: &AeadKey) -> Result<SealedAeadKey, CryptoErr>;
 }
 
 impl KeyUnsealer for Rsa<Private> {
-    fn unseal_key(&self, key_ciphertext: &[u8]) -> Result<AeadKey, CryptoErr> {
+    fn unseal_key(&self, key_ciphertext: &SealedAeadKey) -> Result<AeadKey, CryptoErr> {
         let mut key_plaintext = vec![0; self.size() as usize];
-        let sz = self.private_decrypt(&key_ciphertext, &mut key_plaintext, PADDING)?;
+        let sz = self.private_decrypt(&key_ciphertext.0, &mut key_plaintext, PADDING)?;
         key_plaintext.truncate(sz);
 
         AeadKey::from_existing_key(&key_plaintext)
     }
 }
 
+impl<T: HasPublic> KeySealer for Rsa<T> {
+    fn seal_key(&self, key_plaintext: &AeadKey) -> Result<SealedAeadKey, CryptoErr> {
+        let mut key_ciphertext = vec![0; self.size() as usize];
+        let sz = self.public_encrypt(key_plaintext.as_ref(), &mut key_ciphertext, PADDING)?;
+        key_ciphertext.truncate(sz);
+
+        Ok(SealedAeadKey(key_ciphertext))
+    }    
+}
+
 impl KeySealer for ValidCertificate {
-    fn seal_key(&self, key_plaintext: &AeadKey) -> Result<Vec<u8>, CryptoErr> {
+    fn seal_key(&self, key_plaintext: &AeadKey) -> Result<SealedAeadKey, CryptoErr> {
         let pubkey = self.cert.public_key()?.rsa()?;
 
         if key_plaintext.as_ref().len() > pubkey.size() as usize {
@@ -36,11 +49,7 @@ impl KeySealer for ValidCertificate {
 
         self.cert.key_can(&vec![KeyUsage::KeyEncipherment])?;
 
-        let mut key_ciphertext = vec![0; pubkey.size() as usize];
-        let sz = pubkey.public_encrypt(key_plaintext.as_ref(), &mut key_ciphertext, PADDING)?;
-        key_ciphertext.truncate(sz);
-
-        Ok(key_ciphertext)
+        pubkey.seal_key(key_plaintext)
     }
 }
 

@@ -3,6 +3,7 @@ extern crate lazy_static;
 
 mod model;
 mod storage;
+mod remote;
 #[cfg(test)]
 mod test_utils;
 
