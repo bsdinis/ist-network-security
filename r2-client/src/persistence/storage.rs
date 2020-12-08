@@ -1,5 +1,4 @@
-use crate::model::Commit;
-use crate::model::Snapshot;
+use crate::model::{Commit, CommitAuthor, DocCollaborator, Me, Snapshot};
 
 pub trait Storage {
     type Error;
@@ -30,6 +29,15 @@ pub trait StorageSharedGuard: Drop + Send {
     /// Read current file contents
     async fn load_current_snapshot(&self) -> Result<Snapshot, Self::Error>;
 
+    /// Read a document collaborator
+    async fn load_doc_collaborator(&self, id: &str) -> Result<DocCollaborator, Self::Error>;
+
+    /// Read a commit author
+    async fn load_commit_author(&self, id: &str) -> Result<CommitAuthor, Self::Error>;
+
+    /// Read local user
+    async fn load_me(&self) -> Result<Me, Self::Error>;
+
     /// Drops lock, consuming this guard object
     // no default implementation because the compiler is not smart enough
     fn unlock(self)
@@ -52,6 +60,19 @@ pub trait StorageExclusiveGuard: StorageSharedGuard {
 
     /// Write file contents
     async fn save_current_snapshot(&mut self, content: &Snapshot) -> Result<(), Self::Error>;
+
+    /// Write document collaborator
+    async fn save_doc_collaborator(
+        &mut self,
+        doc_collaborator: &DocCollaborator,
+    ) -> Result<(), Self::Error>;
+
+    /// Write commit author
+    async fn save_commit_author(&mut self, commit_author: &CommitAuthor)
+        -> Result<(), Self::Error>;
+
+    /// Write local user
+    async fn save_me(&mut self, me: &Me) -> Result<(), Self::Error>;
 }
 
 #[cfg(test)]

@@ -4,8 +4,7 @@ use std::path::PathBuf;
 use tokio::fs;
 
 use super::{Storage, StorageExclusiveGuard, StorageSharedGuard};
-use crate::model::Snapshot;
-use crate::model::{Commit, UnverifiedCommit};
+use crate::model::{Commit, CommitAuthor, DocCollaborator, Me, Snapshot, UnverifiedCommit};
 
 type Error = Box<dyn std::error::Error>; // TODO: use more specific type
 
@@ -162,6 +161,21 @@ macro_rules! impl_shared {
             async fn load_current_snapshot(&self) -> Result<Snapshot, Self::Error> {
                 Ok(fs::read_to_string(&self.file_path).await?.into())
             }
+
+            async fn load_doc_collaborator(
+                &self,
+                _id: &str,
+            ) -> Result<DocCollaborator, Self::Error> {
+                unimplemented!()
+            }
+
+            async fn load_commit_author(&self, _id: &str) -> Result<CommitAuthor, Self::Error> {
+                unimplemented!()
+            }
+
+            async fn load_me(&self) -> Result<Me, Self::Error> {
+                unimplemented!()
+            }
         }
     };
 }
@@ -210,6 +224,24 @@ impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
     ) -> Result<(), <Self as StorageSharedGuard>::Error> {
         fs::write(&self.file_path, content).await?;
         Ok(())
+    }
+
+    async fn save_doc_collaborator(
+        &mut self,
+        _doc_collaborator: &DocCollaborator,
+    ) -> Result<(), <Self as StorageSharedGuard>::Error> {
+        unimplemented!()
+    }
+
+    async fn save_commit_author(
+        &mut self,
+        _commit_author: &CommitAuthor,
+    ) -> Result<(), <Self as StorageSharedGuard>::Error> {
+        unimplemented!()
+    }
+
+    async fn save_me(&mut self, _me: &Me) -> Result<(), <Self as StorageSharedGuard>::Error> {
+        unimplemented!()
     }
 }
 

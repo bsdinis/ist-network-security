@@ -49,37 +49,31 @@ pub mod certs {
 
 pub mod user {
     use super::certs::*;
-    use crate::model::{Collaborator, CommitSigner};
+    use crate::model::{CommitAuthor, DocCollaborator, Me};
 
     lazy_static! {
-        pub static ref COMMIT_SIGNER_A: CommitSigner = CommitSigner::from_certificate(
+        pub static ref ME_A: Me = Me::from_certs(
+            CLIENT_A_SIGN_KEY.to_owned(),
             CLIENT_A_SIGN_CERT.to_owned(),
-            Some(CLIENT_A_SIGN_KEY.to_owned())
-        )
-        .unwrap();
-        pub static ref COMMIT_SIGNER_A_VERIFY_ONLY: CommitSigner =
-            CommitSigner::from_certificate(CLIENT_A_SIGN_CERT.to_owned(), None).unwrap();
-        pub static ref COMMIT_SIGNER_B: CommitSigner = CommitSigner::from_certificate(
-            CLIENT_B_SIGN_CERT.to_owned(),
-            Some(CLIENT_B_SIGN_KEY.to_owned())
-        )
-        .unwrap();
-        pub static ref COMMIT_SIGNER_B_VERIFY_ONLY: CommitSigner =
-            CommitSigner::from_certificate(CLIENT_B_SIGN_CERT.to_owned(), None).unwrap();
-        pub static ref COLLABORATOR_A: Collaborator = Collaborator::from_certificate(
+            CLIENT_A_AUTH_KEY.to_owned(),
             CLIENT_A_AUTH_CERT.to_owned(),
-            Some(CLIENT_A_AUTH_KEY.to_owned())
         )
         .unwrap();
-        pub static ref COLLABORATOR_A_VERIFY_ONLY: Collaborator =
-            Collaborator::from_certificate(CLIENT_A_AUTH_CERT.to_owned(), None).unwrap();
-        pub static ref COLLABORATOR_B: Collaborator = Collaborator::from_certificate(
+        pub static ref COMMIT_AUTHOR_A: CommitAuthor =
+            CommitAuthor::from_certificate(CLIENT_A_SIGN_CERT.to_owned()).unwrap();
+        pub static ref DOC_COLLABORATOR_A: DocCollaborator =
+            DocCollaborator::from_certificate(CLIENT_A_AUTH_CERT.to_owned()).unwrap();
+        pub static ref ME_B: Me = Me::from_certs(
+            CLIENT_B_SIGN_KEY.to_owned(),
+            CLIENT_B_SIGN_CERT.to_owned(),
+            CLIENT_B_AUTH_KEY.to_owned(),
             CLIENT_B_AUTH_CERT.to_owned(),
-            Some(CLIENT_B_AUTH_KEY.to_owned())
         )
         .unwrap();
-        pub static ref COLLABORATOR_B_VERIFY_ONLY: Collaborator =
-            Collaborator::from_certificate(CLIENT_B_AUTH_CERT.to_owned(), None).unwrap();
+        pub static ref COMMIT_AUTHOR_B: CommitAuthor =
+            CommitAuthor::from_certificate(CLIENT_B_SIGN_CERT.to_owned()).unwrap();
+        pub static ref DOC_COLLABORATOR_B: DocCollaborator =
+            DocCollaborator::from_certificate(CLIENT_B_AUTH_CERT.to_owned()).unwrap();
     }
 }
 
@@ -99,20 +93,20 @@ pub mod patch {
 
 pub mod commit {
     use super::patch::{PATCH_A_B, PATCH_EMPTY_A};
-    use super::user::{COMMIT_SIGNER_A, COMMIT_SIGNER_B};
+    use super::user::{ME_A, ME_B};
     use crate::model::{Commit, CommitBuilder};
 
     lazy_static! {
         pub static ref COMMIT_0: Commit =
             CommitBuilder::root_commit("initial commit".to_owned(), PATCH_EMPTY_A.to_owned())
-                .author(&*COMMIT_SIGNER_A)
+                .author(&*ME_A)
                 .unwrap();
         pub static ref COMMIT_1: Commit = CommitBuilder::from_commit(
             &*COMMIT_0,
             "fixing A's stuff".to_owned(),
             PATCH_A_B.to_owned()
         )
-        .author(&*COMMIT_SIGNER_B)
+        .author(&*ME_B)
         .unwrap();
     }
 }

@@ -68,8 +68,8 @@ where
                 .await?;
 
             let ucommit = storage.build_commit_from_head(message, patch).await?;
-            let author = storage.get_commit_signer_me().await?;
-            ucommit.author(&author)?
+            let me = storage.load_me().await?;
+            ucommit.author(&me)?
         };
 
         storage.save_commit(&commit).await?;
@@ -212,10 +212,6 @@ where
         }
 
         Ok(commit_id)
-    }
-
-    async fn get_commit_signer_me(&self) -> Result<CommitSigner, Error> {
-        unimplemented!()
     }
 }
 
