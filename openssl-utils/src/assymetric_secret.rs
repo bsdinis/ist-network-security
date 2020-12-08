@@ -53,6 +53,12 @@ impl KeySealer for ValidCertificate {
     }
 }
 
+impl Into<Vec<u8>> for SealedAeadKey {
+    fn into(self) -> Vec<u8> {
+        self.0
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

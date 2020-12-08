@@ -12,7 +12,10 @@ message Collaborator {
 
 message Commit {
 	string commit_id = 1;
-	bytes data = 2;
+	bytes ciphertext = 2;
+	bytes nonce = 3;
+	bytes aad = 4;
+	bytes tag = 5;
 }
 
 message CreateRequest {
