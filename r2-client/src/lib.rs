@@ -2,12 +2,12 @@
 extern crate lazy_static;
 
 mod model;
-mod persistence;
+mod storage;
 #[cfg(test)]
 mod test_utils;
 
 pub use model::*;
-pub use persistence::*;
+pub use storage::*;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -241,7 +241,7 @@ impl<T: StorageExclusiveGuard + Sync> StorageExclusiveGuardExt for T where Error
 #[cfg(test)]
 mod test {
     use super::File;
-    use crate::persistence::test::TempDirFilesystemStorage;
+    use crate::storage::test::TempDirFilesystemStorage;
 
     #[test]
     fn create() {

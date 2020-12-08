@@ -249,7 +249,7 @@ impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
 pub mod test {
     use super::FilesystemStorage;
     use crate::model::Snapshot;
-    use crate::persistence::{Storage, StorageSharedGuard};
+    use crate::storage::{Storage, StorageSharedGuard};
     use tempdir::TempDir;
 
     /// Wrapper for [FilesystemStorage] that creates a temp dir for storage
