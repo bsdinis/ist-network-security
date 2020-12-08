@@ -1,12 +1,6 @@
-use super::{CryptoErr, KeyUsage};
-use lazy_static::lazy_static;
-use openssl::hash::{hash, MessageDigest};
+use super::{CryptoErr, KeyUsage, PublicKeyFingerprintExt};
 use openssl::nid::Nid;
 use openssl::x509::*;
-
-lazy_static! {
-    static ref PUBKEY_DIGEST_ALGO: MessageDigest = MessageDigest::sha3_256();
-}
 
 #[derive(Clone)]
 pub struct ValidCertificate {
@@ -14,7 +8,7 @@ pub struct ValidCertificate {
     _priv: (),
 }
 
-pub trait X509Ext {
+pub trait X509Ext: PublicKeyFingerprintExt {
     fn key_can(&self, usage: &[KeyUsage]) -> Result<(), CryptoErr>;
 
     fn common_name(&self) -> Result<String, CryptoErr>;
@@ -26,8 +20,12 @@ pub trait X509Ext {
     ) -> Result<ValidCertificate, CryptoErr>;
 
     unsafe fn validate_unchecked(self) -> ValidCertificate;
+}
 
-    fn pubkey_fingerprint(&self) -> Result<Vec<u8>, CryptoErr>;
+impl PublicKeyFingerprintExt for X509 {
+    fn pubkey_fingerprint(&self) -> Result<Vec<u8>, CryptoErr> {
+        self.public_key()?.pubkey_fingerprint()
+    }
 }
 
 impl X509Ext for X509 {
@@ -109,11 +107,11 @@ impl X509Ext for X509 {
             _priv: (),
         }
     }
+}
 
+impl PublicKeyFingerprintExt for ValidCertificate {
     fn pubkey_fingerprint(&self) -> Result<Vec<u8>, CryptoErr> {
-        let pubkey = self.public_key()?.public_key_to_der()?;
-        let fingerprint = hash(PUBKEY_DIGEST_ALGO.to_owned(), &pubkey)?.to_vec();
-        Ok(fingerprint)
+        self.cert.pubkey_fingerprint()
     }
 }
 
@@ -136,10 +134,6 @@ impl X509Ext for ValidCertificate {
 
     unsafe fn validate_unchecked(self) -> ValidCertificate {
         self
-    }
-
-    fn pubkey_fingerprint(&self) -> Result<Vec<u8>, CryptoErr> {
-        self.cert.pubkey_fingerprint()
     }
 }
 

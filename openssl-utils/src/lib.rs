@@ -1,6 +1,9 @@
 use openssl::error::ErrorStack;
 use std::fmt;
 
+mod pubkey_fingerprint;
+pub use pubkey_fingerprint::PublicKeyFingerprintExt;
+
 mod cert;
 pub use cert::{ValidCertificate, X509Ext};
 
