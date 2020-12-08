@@ -1,3 +1,4 @@
+use super::auth_utils::authenticate;
 use protos::client_api_server::ClientApi;
 use protos::*;
 use tonic::{Request, Response, Status};
@@ -16,7 +17,11 @@ impl ClientApi for ClientApiService {
         &self,
         request: Request<CreateRequest>,
     ) -> Result<Response<CreateResponse>, Status> {
-        eprintln!("not implemented: request was {:#?}", request);
+        let client_id = authenticate(&request).await?;
+        eprintln!(
+            "not implemented: you are {:x?} request was {:#?}",
+            client_id, request
+        );
         Err(Status::unimplemented("hold up, not yet"))
     }
 
@@ -24,7 +29,11 @@ impl ClientApi for ClientApiService {
         &self,
         request: Request<GetMetadataRequest>,
     ) -> Result<Response<GetMetadataResponse>, Status> {
-        eprintln!("not implemented: request was {:#?}", request);
+        let client_id = authenticate(&request).await?;
+        eprintln!(
+            "not implemented: you are {:x?} request was {:#?}",
+            client_id, request
+        );
         Err(Status::unimplemented("hold up, not yet"))
     }
 
@@ -32,7 +41,11 @@ impl ClientApi for ClientApiService {
         &self,
         request: Request<GetCommitRequest>,
     ) -> Result<Response<GetCommitResponse>, Status> {
-        eprintln!("not implemented: request was {:#?}", request);
+        let client_id = authenticate(&request).await?;
+        eprintln!(
+            "not implemented: you are {:x?} request was {:#?}",
+            client_id, request
+        );
         Err(Status::unimplemented("hold up, not yet"))
     }
 
@@ -40,7 +53,11 @@ impl ClientApi for ClientApiService {
         &self,
         request: Request<CommitRequest>,
     ) -> Result<Response<CommitResponse>, Status> {
-        eprintln!("not implemented: request was {:#?}", request);
+        let client_id = authenticate(&request).await?;
+        eprintln!(
+            "not implemented: you are {:x?} request was {:#?}",
+            client_id, request
+        );
         Err(Status::unimplemented("hold up, not yet"))
     }
 
@@ -48,7 +65,11 @@ impl ClientApi for ClientApiService {
         &self,
         request: Request<EditCollaboratorsRequest>,
     ) -> Result<Response<EditCollaboratorsResponse>, Status> {
-        eprintln!("not implemented: request was {:#?}", request);
+        let client_id = authenticate(&request).await?;
+        eprintln!(
+            "not implemented: you are {:x?} request was {:#?}",
+            client_id, request
+        );
         Err(Status::unimplemented("hold up, not yet"))
     }
 
@@ -56,7 +77,11 @@ impl ClientApi for ClientApiService {
         &self,
         request: Request<GetCollaboratorsRequest>,
     ) -> Result<Response<GetCollaboratorsResponse>, Status> {
-        eprintln!("not implemented: request was {:#?}", request);
+        let client_id = authenticate(&request).await?;
+        eprintln!(
+            "not implemented: you are {:x?} request was {:#?}",
+            client_id, request
+        );
         Err(Status::unimplemented("hold up, not yet"))
     }
 
@@ -64,7 +89,11 @@ impl ClientApi for ClientApiService {
         &self,
         request: Request<SquashRequest>,
     ) -> Result<Response<SquashResponse>, Status> {
-        eprintln!("not implemented: request was {:#?}", request);
+        let client_id = authenticate(&request).await?;
+        eprintln!(
+            "not implemented: you are {:x?} request was {:#?}",
+            client_id, request
+        );
         Err(Status::unimplemented("hold up, not yet"))
     }
 
@@ -72,7 +101,11 @@ impl ClientApi for ClientApiService {
         &self,
         request: Request<RollbackRequest>,
     ) -> Result<Response<RollbackRequest>, Status> {
-        eprintln!("not implemented: request was {:#?}", request);
+        let client_id = authenticate(&request).await?;
+        eprintln!(
+            "not implemented: you are {:x?} request was {:#?}",
+            client_id, request
+        );
         Err(Status::unimplemented("hold up, not yet"))
     }
 }

@@ -12,6 +12,7 @@ edition = "2018"
 
 [dependencies]
 tokio = { version = "0.2.23", features = ["full"] }
-tonic = { version = "0.3.1", features = ["tls"] }
+#tonic = { version = "0.3.1", features = ["tls"] } # bug in hyper/tonic means we need to do some things by hand
+tonic = { git = "https://github.com/abread/tonic", branch = "mtls-expose-peer-certs", features = ["tls"] }
 protos = { path = "../protos" }
 argh = "0.1"
