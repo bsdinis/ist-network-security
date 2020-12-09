@@ -1,4 +1,8 @@
-use crate::model::{Commit, CommitAuthor, DocCollaborator, Me, Snapshot};
+use std::path::PathBuf;
+
+use crate::model::{Commit, CommitAuthor, DocCollaborator, Snapshot};
+use serde::{de::DeserializeOwned, Serialize};
+use std::borrow::Borrow;
 
 pub trait Storage {
     type Error;
@@ -15,8 +19,7 @@ pub trait StorageSharedGuard: Drop + Send {
     type Error;
 
     /// Load a persisted commit from repo
-    /// Will return None if the commit does not exist in storage.
-    async fn load_commit(&self, commit_id: &str) -> Result<Option<Commit>, Self::Error>;
+    async fn load_commit(&self, commit_id: &str) -> Result<Commit, Self::Error>;
 
     /// Read head reference
     /// Will return an error if the head was not saved before.
@@ -30,16 +33,22 @@ pub trait StorageSharedGuard: Drop + Send {
     async fn load_current_snapshot(&self) -> Result<Snapshot, Self::Error>;
 
     /// Read a document collaborator
-    async fn load_doc_collaborator(&self, id: &str) -> Result<DocCollaborator, Self::Error>;
+    /// Will return None if the collaborator does not exist in storage.
+    async fn load_doc_collaborator(
+        &self,
+        id: &[u8],
+    ) -> Result<Option<DocCollaborator>, Self::Error>;
 
     /// Read a commit author
-    async fn load_commit_author(&self, id: &str) -> Result<CommitAuthor, Self::Error>;
+    /// Will return None if the author does not exist in storage.
+    async fn load_commit_author(&self, id: &[u8]) -> Result<Option<CommitAuthor>, Self::Error>;
 
-    /// Read local user
-    async fn load_me(&self) -> Result<Me, Self::Error>;
+    /// Read [StorageObject] from storage
+    async fn load<O: StorageObject, ID: Sync>(&self, id: &ID) -> Result<O, Self::Error>
+    where
+        O::Id: Borrow<ID>;
 
     /// Drops lock, consuming this guard object
-    // no default implementation because the compiler is not smart enough
     fn unlock(self)
     where
         Self: Sized,
@@ -71,14 +80,22 @@ pub trait StorageExclusiveGuard: StorageSharedGuard {
     async fn save_commit_author(&mut self, commit_author: &CommitAuthor)
         -> Result<(), Self::Error>;
 
-    /// Write local user
-    async fn save_me(&mut self, me: &Me) -> Result<(), Self::Error>;
+    /// Write [StorageObject] to storage
+    async fn save<O: StorageObject>(&mut self, obj: &O) -> Result<(), Self::Error>;
+}
+
+pub trait StorageObject: Serialize + DeserializeOwned + Send + Sync {
+    type Id;
+    fn save_path(&self, root: &PathBuf) -> PathBuf;
+    fn load_path<ID>(root: &PathBuf, id: &ID) -> PathBuf
+    where
+        Self::Id: Borrow<ID>;
 }
 
 #[cfg(test)]
 #[macro_use]
 pub mod test {
-    use openssl_utils::{ X509Ext };
+    use openssl_utils::X509Ext;
 
     use super::{Storage, StorageExclusiveGuard, StorageSharedGuard};
     use crate::test_utils::commit::*;
@@ -154,20 +171,20 @@ pub mod test {
                 .0
                 .try_exclusive()
                 .expect("can't lock storage (exclusive)");
-            assert!(s.load_commit(&COMMIT_0.id).await.unwrap().is_none());
-            assert!(s.load_commit(&COMMIT_1.id).await.unwrap().is_none());
+            assert!(s.load_commit(&COMMIT_0.id).await.is_err());
+            assert!(s.load_commit(&COMMIT_1.id).await.is_err());
 
             s.save_commit(&*COMMIT_0).await.expect("can't save commit");
             s.save_commit(&*COMMIT_1).await.expect("can't save commit");
 
             assert_eq!(
                 COMMIT_0.to_owned(),
-                s.load_commit(&COMMIT_0.id).await.unwrap().unwrap(),
+                s.load_commit(&COMMIT_0.id).await.unwrap(),
                 "storage mangled commit"
             );
             assert_eq!(
                 COMMIT_1.to_owned(),
-                s.load_commit(&COMMIT_1.id).await.unwrap().unwrap(),
+                s.load_commit(&COMMIT_1.id).await.unwrap(),
                 "storage mangled commit"
             );
         }
@@ -252,8 +269,9 @@ pub mod test {
                 .expect("can't save doc collaborator");
 
             let loaded_doc_collaborator = s
-                .load_doc_collaborator(&hex::encode(&doc_collaborator.id))
+                .load_doc_collaborator(&doc_collaborator.id)
                 .await
+                .unwrap()
                 .unwrap();
 
             assert_eq!(
@@ -294,8 +312,9 @@ pub mod test {
                 .expect("can't save commit author");
 
             let loaded_commit_author = s
-                .load_commit_author(&hex::encode(&commit_author.id))
+                .load_commit_author(&commit_author.id)
                 .await
+                .unwrap()
                 .unwrap();
 
             assert_eq!(

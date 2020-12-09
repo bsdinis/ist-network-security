@@ -36,7 +36,7 @@ impl<T: HasPublic> KeySealer for Rsa<T> {
         key_ciphertext.truncate(sz);
 
         Ok(SealedAeadKey(key_ciphertext))
-    }    
+    }
 }
 
 impl KeySealer for ValidCertificate {

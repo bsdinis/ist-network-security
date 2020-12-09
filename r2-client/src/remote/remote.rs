@@ -22,8 +22,7 @@ pub trait RemoteFile {
 
     async fn load_metadata(&mut self) -> Result<FileMetadata, Self::Error>;
 
-    async fn load_commit(&mut self, commit_id: &str)
-        -> Result<Option<CipheredCommit>, Self::Error>;
+    async fn load_commit(&mut self, commit_id: &str) -> Result<CipheredCommit, Self::Error>;
 
     async fn commit(&mut self, commit: CipheredCommit) -> Result<(), Self::Error>;
 

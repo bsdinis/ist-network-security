@@ -102,13 +102,14 @@ impl RemoteFile for DummyRemoteFile {
         })
     }
 
-    async fn load_commit(
-        &mut self,
-        commit_id: &str,
-    ) -> Result<Option<CipheredCommit>, Self::Error> {
+    async fn load_commit(&mut self, commit_id: &str) -> Result<CipheredCommit, Self::Error> {
         let data = self.data.lock().await;
 
-        Ok(data.commits.get(commit_id).map(|c| c.to_owned()))
+        data.commits
+            .get(commit_id)
+            .ok_or(format!("commit {} not found", commit_id))
+            .map(|c| c.to_owned())
+            .map_err(|e| e.into())
     }
 
     async fn commit(&mut self, commit: CipheredCommit) -> Result<(), Self::Error> {

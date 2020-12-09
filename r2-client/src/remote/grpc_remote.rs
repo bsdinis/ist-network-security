@@ -83,10 +83,7 @@ impl RemoteFile for GrpcRemoteFile {
         Ok(resp.into())
     }
 
-    async fn load_commit(
-        &mut self,
-        commit_id: &str,
-    ) -> Result<Option<CipheredCommit>, Self::Error> {
+    async fn load_commit(&mut self, commit_id: &str) -> Result<CipheredCommit, Self::Error> {
         let req = protos::GetCommitRequest {
             document_id: self.id.to_owned(),
             commit_id: commit_id.to_owned(),
@@ -94,7 +91,7 @@ impl RemoteFile for GrpcRemoteFile {
 
         let resp = self.client.get_commit(req).await?.into_inner();
 
-        Ok(resp.commit.map_try_into()?)
+        Ok(resp.commit.try_into()?)
     }
 
     async fn commit(&mut self, commit: CipheredCommit) -> Result<(), Self::Error> {
@@ -201,6 +198,14 @@ impl TryFrom<protos::Commit> for CipheredCommit {
                 tag: msg.tag.try_into().map_err(|_| BadDataFromServer)?,
             },
         })
+    }
+}
+
+impl TryFrom<Option<protos::Commit>> for CipheredCommit {
+    type Error = BadDataFromServer;
+
+    fn try_from(maybe_msg: Option<protos::Commit>) -> Result<Self, Self::Error> {
+        maybe_msg.map_try_into()?.ok_or(BadDataFromServer)
     }
 }
 

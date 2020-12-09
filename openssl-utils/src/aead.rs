@@ -13,7 +13,7 @@ pub const KEY_SIZE: usize = 32; // 256 bit
 pub const TAG_SIZE: usize = 16;
 pub const NONCE_SIZE: usize = 12;
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct AeadKey([u8; KEY_SIZE]);
 
 #[derive(Debug, PartialEq, Clone)]

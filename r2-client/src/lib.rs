@@ -10,12 +10,14 @@ mod test_utils;
 type Error = Box<dyn std::error::Error>;
 
 use model::*;
-use storage::*;
-use remote::*;
+use openssl_utils::{AeadKey, KeyUnsealer, SealedAeadKey};
 use remote::model::*;
-use openssl_utils::AeadKey;
-
+use remote::*;
+use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
+use std::path::PathBuf;
 use std::sync::Arc;
+use storage::*;
 
 /// A File tracked by R2
 pub struct File<S: Storage, RF: RemoteFile>
@@ -24,7 +26,7 @@ where
     S::ExclusiveGuard: Sync,
 {
     me: Arc<Me>,
-    document_key: AeadKey,
+    config: RepoConfig,
     storage: S,
     remote: RF,
 }
@@ -58,8 +60,17 @@ where
     Error: From<S::Error>,
     Error: From<RF::Error>,
 {
-    pub fn new(me: Arc<Me>, document_key: AeadKey, storage: S, remote: RF) -> Self {
-        File { me, document_key, storage, remote }
+    pub async fn new(me: Arc<Me>, storage: S, remote: RF) -> Result<Self, Error> {
+        let config: RepoConfig = {
+            let s = storage.try_exclusive()?;
+            s.load(&()).await?
+        };
+        Ok(File {
+            me,
+            config,
+            storage,
+            remote,
+        })
     }
 
     /// Compute the patch that transforms revision a into revision b
@@ -130,16 +141,93 @@ where
         unimplemented!()
     }
 
-    /// Pull and apply changes from remote
-    /// Only supports fast-forwarding.
-    pub async fn pull(&self) -> Result<(), Error> {
-        // TODO: consider implementing pull with rebase
-        unimplemented!()
+    /// Fetch changes from remote
+    /// Returns last received commit from remote
+    pub async fn fetch(&mut self) -> Result<Option<Commit>, Error> {
+        let mut s = self.storage.try_exclusive()?;
+
+        let cur_remote_head = s.load_remote_head().await?;
+
+        let metadata = self.remote.load_metadata().await?;
+        self.update_document_key(&mut s, &metadata.document_key)
+            .await?;
+        if cur_remote_head == metadata.head {
+            return Ok(None);
+        }
+
+        let mut commits_to_apply: Vec<Commit> = vec![];
+        let commit = self.remote.load_commit(&metadata.head).await?;
+        let commit = self.decipher_commit(&s, commit).await?;
+        commits_to_apply.push(commit);
+
+        let mut prev_id_opt = commits_to_apply.last().unwrap().prev_commit_id.as_ref();
+        while prev_id_opt != Some(&cur_remote_head) && prev_id_opt != None {
+            let prev_id = prev_id_opt.unwrap();
+            let commit = self.remote.load_commit(&prev_id).await?;
+            let commit = self.decipher_commit(&s, commit).await?;
+            commits_to_apply.push(commit);
+
+            prev_id_opt = commits_to_apply.last().unwrap().prev_commit_id.as_ref();
+        }
+
+        for commit in commits_to_apply.iter().rev() {
+            s.save_commit(commit).await?;
+            s.save_remote_head(&commit.id).await?;
+        }
+
+        Ok(Some(commits_to_apply.remove(0)))
     }
 
     fn cipher_commit(&self, _commit: &Commit) -> Result<CipheredCommit, Error> {
         unimplemented!()
         //CipheredCommit::cipher(commit, self.document_key, ?)
+    }
+
+    async fn decipher_commit<SG: StorageSharedGuard<Error = S::Error>>(
+        &self,
+        s: &SG,
+        commit: CipheredCommit,
+    ) -> Result<Commit, Error> {
+        let unverified = commit.decipher(&self.config.document_key)?;
+        let author = match s.load_commit_author(&unverified.author_id).await? {
+            None => unimplemented!("can't load author certificates automatically yet"),
+            Some(a) => a,
+        };
+
+        unverified.verify(&author)
+    }
+
+    async fn update_document_key(
+        &mut self,
+        s: &mut S::ExclusiveGuard,
+        key: &SealedAeadKey,
+    ) -> Result<(), Error> {
+        let key = self.me.unseal_key(key)?;
+        if key != self.config.document_key {
+            self.config.document_key = key;
+            s.save(&self.config).await?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct RepoConfig {
+    document_key: AeadKey,
+}
+
+impl StorageObject for RepoConfig {
+    type Id = ();
+
+    fn load_path<ID>(root: &PathBuf, _id: &ID) -> PathBuf
+    where
+        Self::Id: Borrow<ID>,
+    {
+        root.join("config")
+    }
+    fn save_path(&self, root: &PathBuf) -> PathBuf {
+        root.join("config")
     }
 }
 
@@ -185,18 +273,12 @@ where
     ) -> Result<Vec<Commit>, Error> {
         let mut res = Vec::new();
 
-        let commit = self
-            .load_commit(from_id)
-            .await?
-            .ok_or(format!("Commit {} not found", from_id))?;
+        let commit = self.load_commit(from_id).await?;
         let mut prev_id = commit.prev_commit_id.clone();
         res.push(commit);
 
         while let Some(ref id) = prev_id {
-            let commit = self
-                .load_commit(id)
-                .await?
-                .ok_or(format!("Commit {} not found", id))?;
+            let commit = self.load_commit(id).await?;
 
             prev_id = match to_id {
                 // stop going back when target is reached
@@ -216,7 +298,6 @@ where
             commit_id = self
                 .load_commit(&commit_id)
                 .await?
-                .ok_or(format!("Commit {} not found", commit_id))?
                 .prev_commit_id
                 .ok_or(format!("Unknown revision: HEAD~{}", n))?;
         }
@@ -238,10 +319,7 @@ where
         patch: PatchStr,
     ) -> Result<CommitBuilder, Error> {
         let prev_commit_id = self.load_head().await?;
-        let prev_commit = self.load_commit(&prev_commit_id).await?.ok_or(format!(
-            "invalid HEAD: commit {} does not exist",
-            &prev_commit_id
-        ))?;
+        let prev_commit = self.load_commit(&prev_commit_id).await?;
         Ok(CommitBuilder::from_commit(&prev_commit, message, patch))
     }
 }
@@ -250,21 +328,25 @@ impl<T: StorageExclusiveGuard + Sync> StorageExclusiveGuardExt for T where Error
 
 #[cfg(test)]
 mod test {
+    use super::RepoConfig;
     use openssl_utils::AeadKey;
 
-    use std::sync::Arc;
     use super::File;
-    use crate::remote::{DummyRemote, Remote, model::RemoteCollaborator};
-    use crate::remote::model::{CipheredCommit, CipheredCommitNonceSource};
     use crate::model::Commit;
-    use crate::storage::{Storage, StorageExclusiveGuard};
+    use crate::remote::model::{CipheredCommit, CipheredCommitNonceSource};
+    use crate::remote::{model::RemoteCollaborator, DummyRemote, Remote};
     use crate::storage::test::TempDirFilesystemStorage;
-    use crate::test_utils::{user::*, commit::*};
+    use crate::storage::{Storage, StorageExclusiveGuard};
+    use crate::test_utils::{commit::*, user::*};
+    use std::sync::Arc;
 
     struct DummyNonceSource;
     impl CipheredCommitNonceSource for DummyNonceSource {
         type Error = std::convert::Infallible;
-        fn nonce_for(&self, _commit: &Commit) -> Result<[u8; openssl_utils::aead::NONCE_SIZE], Self::Error> {
+        fn nonce_for(
+            &self,
+            _commit: &Commit,
+        ) -> Result<[u8; openssl_utils::aead::NONCE_SIZE], Self::Error> {
             Ok([42; openssl_utils::aead::NONCE_SIZE])
         }
     }
@@ -276,19 +358,25 @@ mod test {
 
         let initial_commit = COMMIT_0.to_owned();
 
+        let doc_key = AeadKey::gen_key().unwrap();
         let storage = TempDirFilesystemStorage::new();
         {
             let mut s = storage.try_exclusive().unwrap();
             s.save_head(&initial_commit.id).await.unwrap();
             s.save_commit(&initial_commit).await.unwrap();
+
+            s.save(&RepoConfig {
+                document_key: doc_key.clone(),
+            })
+            .await
+            .unwrap();
         }
-    
-        let doc_key = AeadKey::gen_key().unwrap();
+
         let nonce_src = DummyNonceSource;
         let initial_commit = CipheredCommit::cipher(&initial_commit, &doc_key, &nonce_src).unwrap();
         let collaborators = vec![RemoteCollaborator::from_me(&me, &doc_key).unwrap()];
         let remote_file = remote.create(initial_commit, collaborators).await.unwrap();
-        
-        let _ = File::new(me, doc_key, storage, remote_file);
+
+        let _ = File::new(me, storage, remote_file);
     }
 }
