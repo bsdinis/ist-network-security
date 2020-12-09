@@ -35,6 +35,7 @@ pub struct DocCollaborator {
 /// signing key which they use to sign them.
 ///
 /// Decoupled from [DocCollaborator] because a 1:1 correspondence is not enforced.
+#[derive(Clone)]
 pub struct CommitAuthor {
     pub id: Vec<u8>,
     pub name: String,
@@ -196,6 +197,18 @@ impl SignatureVerifier for CommitAuthor {
 impl Signer for Me {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, CryptoErr> {
         self.sign_private_key.sign(message)
+    }
+}
+
+impl TryFrom<CommitAuthor> for UnverifiedCommitAuthor {
+    type Error = CryptoErr;
+
+    fn try_from(user: CommitAuthor) -> Result<Self, Self::Error> {
+        let sign_certificate_pem = user.sign_certificate.cert.to_pem()?;
+
+        Ok(UnverifiedCommitAuthor {
+            sign_certificate_pem,
+        })
     }
 }
 

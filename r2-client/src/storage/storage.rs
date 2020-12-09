@@ -78,9 +78,12 @@ pub trait StorageExclusiveGuard: StorageSharedGuard {
 #[cfg(test)]
 #[macro_use]
 pub mod test {
+    use openssl_utils::{ X509Ext };
+
     use super::{Storage, StorageExclusiveGuard, StorageSharedGuard};
-    use crate::model::Snapshot;
     use crate::test_utils::commit::*;
+    use crate::{model::Snapshot, CommitAuthor, DocCollaborator};
+    use openssl::x509::X509;
     use std::fmt::Debug;
     use std::mem;
 
@@ -231,6 +234,86 @@ pub mod test {
                 "storage didn't write file properly"
             );
         }
+
+        pub async fn save_load_doc_collaborator(&self) {
+            let mut s = self
+                .0
+                .try_exclusive()
+                .expect("can't lock storage (exclusive)");
+
+            let auht_cert_pem = include_bytes!("../test_utils/clientA-auth.cert.pem");
+            let auth_cert = X509::from_pem(auht_cert_pem).unwrap();
+
+            let auth_cert = unsafe { auth_cert.validate_unchecked() };
+            let doc_collaborator = DocCollaborator::from_certificate(auth_cert).unwrap();
+
+            s.save_doc_collaborator(&doc_collaborator)
+                .await
+                .expect("can't save doc collaborator");
+
+            let loaded_doc_collaborator = s
+                .load_doc_collaborator(&hex::encode(&doc_collaborator.id))
+                .await
+                .unwrap();
+
+            assert_eq!(
+                doc_collaborator.id, loaded_doc_collaborator.id,
+                "storage didn't write doc collaborator properly"
+            );
+
+            assert_eq!(
+                doc_collaborator.name, loaded_doc_collaborator.name,
+                "storage didn't write doc collaborator properly"
+            );
+
+            assert_eq!(
+                doc_collaborator.auth_certificate.cert.to_pem().unwrap(),
+                loaded_doc_collaborator
+                    .auth_certificate
+                    .cert
+                    .to_pem()
+                    .unwrap(),
+                "storage didn't write doc collaborator properly"
+            );
+        }
+
+        pub async fn save_load_commit_author(&self) {
+            let mut s = self
+                .0
+                .try_exclusive()
+                .expect("can't lock storage (exclusive)");
+
+            let sign_cert_pem = include_bytes!("../test_utils/clientA-sign.cert.pem");
+            let sign_cert = X509::from_pem(sign_cert_pem).unwrap();
+
+            let sign_cert = unsafe { sign_cert.validate_unchecked() };
+            let commit_author = CommitAuthor::from_certificate(sign_cert).unwrap();
+
+            s.save_commit_author(&commit_author)
+                .await
+                .expect("can't save commit author");
+
+            let loaded_commit_author = s
+                .load_commit_author(&hex::encode(&commit_author.id))
+                .await
+                .unwrap();
+
+            assert_eq!(
+                commit_author.id, loaded_commit_author.id,
+                "storage didn't write commit author properly"
+            );
+
+            assert_eq!(
+                commit_author.name, loaded_commit_author.name,
+                "storage didn't write commit author properly"
+            );
+
+            assert_eq!(
+                commit_author.sign_certificate.cert.to_pem().unwrap(),
+                loaded_commit_author.sign_certificate.cert.to_pem().unwrap(),
+                "storage didn't write commit author properly"
+            );
+        }
     }
 
     /*
@@ -272,6 +355,8 @@ pub mod test {
                 test_async_method!(save_load_head);
                 test_async_method!(save_load_remote_head);
                 test_async_method!(save_load_current_snapshot);
+                test_async_method!(save_load_doc_collaborator);
+                test_async_method!(save_load_commit_author);
             }
         };
     }

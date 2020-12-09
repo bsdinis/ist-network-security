@@ -1,10 +1,16 @@
 use fs2::FileExt;
+use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::str;
+
 use tokio::fs;
 
 use super::{Storage, StorageExclusiveGuard, StorageSharedGuard};
-use crate::model::{Commit, CommitAuthor, DocCollaborator, Me, Snapshot, UnverifiedCommit};
+use crate::model::{
+    Commit, CommitAuthor, DocCollaborator, Me, Snapshot, UnverifiedCommit, UnverifiedCommitAuthor,
+    UnverifiedDocCollaborator,
+};
 
 type Error = Box<dyn std::error::Error>; // TODO: use more specific type
 
@@ -50,6 +56,15 @@ fn head_path(root: &PathBuf) -> PathBuf {
 fn remote_head_path(root: &PathBuf) -> PathBuf {
     root.join("remote_head")
 }
+
+fn doc_collaborator_path(root: &PathBuf, doc_collaborator_id: &str) -> PathBuf {
+    root.join("doc_collaborators").join(doc_collaborator_id)
+}
+
+fn commit_author_path(root: &PathBuf, commit_author_id: &str) -> PathBuf {
+    root.join("commit_authors").join(commit_author_id)
+}
+
 
 impl FilesystemStorage {
     pub fn new(file_path: PathBuf) -> Result<Self, <Self as Storage>::Error> {
@@ -166,11 +181,18 @@ macro_rules! impl_shared {
                 &self,
                 _id: &str,
             ) -> Result<DocCollaborator, Self::Error> {
-                unimplemented!()
+                let doc_collaborator_path = doc_collaborator_path(&self.root, _id);
+                let doc_collaborator = fs::read_to_string(doc_collaborator_path).await?;
+                let doc_collaborator: UnverifiedDocCollaborator =
+                    toml::from_str(&doc_collaborator)?;
+                unsafe { Ok(doc_collaborator.verify_unchecked().unwrap()) }
             }
 
             async fn load_commit_author(&self, _id: &str) -> Result<CommitAuthor, Self::Error> {
-                unimplemented!()
+                let commit_author_path = commit_author_path(&self.root, _id);
+                let commit_author = fs::read_to_string(commit_author_path).await?;
+                let commit_author: UnverifiedCommitAuthor = toml::from_str(&commit_author)?;
+                unsafe { Ok(commit_author.verify_unchecked().unwrap()) }
             }
 
             async fn load_me(&self) -> Result<Me, Self::Error> {
@@ -228,16 +250,43 @@ impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
 
     async fn save_doc_collaborator(
         &mut self,
-        _doc_collaborator: &DocCollaborator,
+        doc_collaborator: &DocCollaborator,
     ) -> Result<(), <Self as StorageSharedGuard>::Error> {
-        unimplemented!()
+        let doc_collaborator_id = hex::encode(&doc_collaborator.id);
+        let doc_collaborator_path = doc_collaborator_path(&self.root, &doc_collaborator_id);
+
+        fs::DirBuilder::new()
+            .recursive(true)
+            .create(doc_collaborator_path.parent().unwrap())
+            .await?;
+
+        let doc_collaborator = doc_collaborator.to_owned();
+        let doc_collaborator = UnverifiedDocCollaborator::try_from(doc_collaborator).unwrap(); //maybe use matching
+
+        let contents = toml::to_string(&doc_collaborator)?;
+        fs::write(doc_collaborator_path, contents).await?;
+
+        Ok(())
     }
 
     async fn save_commit_author(
         &mut self,
-        _commit_author: &CommitAuthor,
+        commit_author: &CommitAuthor,
     ) -> Result<(), <Self as StorageSharedGuard>::Error> {
-        unimplemented!()
+        let commit_author_id = hex::encode(&commit_author.id);
+        let commit_author_path = commit_author_path(&self.root, &commit_author_id);
+
+        fs::DirBuilder::new()
+            .recursive(true)
+            .create(commit_author_path.parent().unwrap())
+            .await?;
+
+        let commit_author = commit_author.to_owned();
+        let commit_author = UnverifiedCommitAuthor::try_from(commit_author).unwrap(); //maybe use matching
+
+        let contents = toml::to_string(&commit_author)?;
+        fs::write(commit_author_path, contents).await?;
+        Ok(())
     }
 
     async fn save_me(&mut self, _me: &Me) -> Result<(), <Self as StorageSharedGuard>::Error> {
