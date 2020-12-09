@@ -1,23 +1,32 @@
 #[macro_use]
 extern crate lazy_static;
 
-mod model;
-mod storage;
+pub mod model;
+pub mod remote;
+pub mod storage;
 #[cfg(test)]
 mod test_utils;
 
-pub use model::*;
-pub use storage::*;
-
 type Error = Box<dyn std::error::Error>;
 
+use model::*;
+use storage::*;
+use remote::*;
+use remote::model::*;
+use openssl_utils::AeadKey;
+
+use std::sync::Arc;
+
 /// A File tracked by R2
-pub struct File<S: Storage>
+pub struct File<S: Storage, RF: RemoteFile>
 where
     S::SharedGuard: Sync,
     S::ExclusiveGuard: Sync,
 {
+    me: Arc<Me>,
+    document_key: AeadKey,
     storage: S,
+    remote: RF,
 }
 
 /// Identifier of a revision
@@ -42,14 +51,15 @@ pub enum ResetHardness {
     Soft,
 }
 
-impl<S: Storage> File<S>
+impl<S: Storage, RF: RemoteFile> File<S, RF>
 where
     S::SharedGuard: Sync,
     S::ExclusiveGuard: Sync,
     Error: From<S::Error>,
+    Error: From<RF::Error>,
 {
-    pub fn new(storage: S) -> Self {
-        File { storage }
+    pub fn new(me: Arc<Me>, document_key: AeadKey, storage: S, remote: RF) -> Self {
+        File { me, document_key, storage, remote }
     }
 
     /// Compute the patch that transforms revision a into revision b
@@ -59,7 +69,7 @@ where
     }
 
     /// Commit the current state
-    pub async fn commit(&self, message: String) -> Result<Commit, Error> {
+    pub async fn commit(&mut self, message: String) -> Result<Commit, Error> {
         let mut storage = self.storage.try_exclusive()?;
 
         let commit = {
@@ -68,10 +78,10 @@ where
                 .await?;
 
             let ucommit = storage.build_commit_from_head(message, patch).await?;
-            let me = storage.load_me().await?;
-            ucommit.author(&me)?
+            ucommit.author(&self.me)?
         };
 
+        self.remote.commit(self.cipher_commit(&commit)?).await?;
         storage.save_commit(&commit).await?;
         storage.save_head(&commit.id).await?;
 
@@ -127,9 +137,9 @@ where
         unimplemented!()
     }
 
-    /// Push local changes to remote
-    pub async fn push(&self) -> Result<(), Error> {
+    fn cipher_commit(&self, _commit: &Commit) -> Result<CipheredCommit, Error> {
         unimplemented!()
+        //CipheredCommit::cipher(commit, self.document_key, ?)
     }
 }
 
@@ -240,11 +250,45 @@ impl<T: StorageExclusiveGuard + Sync> StorageExclusiveGuardExt for T where Error
 
 #[cfg(test)]
 mod test {
-    use super::File;
-    use crate::storage::test::TempDirFilesystemStorage;
+    use openssl_utils::AeadKey;
 
-    #[test]
-    fn create() {
-        let _ = File::new(TempDirFilesystemStorage::new());
+    use std::sync::Arc;
+    use super::File;
+    use crate::remote::{DummyRemote, Remote, model::RemoteCollaborator};
+    use crate::remote::model::{CipheredCommit, CipheredCommitNonceSource};
+    use crate::model::Commit;
+    use crate::storage::{Storage, StorageExclusiveGuard};
+    use crate::storage::test::TempDirFilesystemStorage;
+    use crate::test_utils::{user::*, commit::*};
+
+    struct DummyNonceSource;
+    impl CipheredCommitNonceSource for DummyNonceSource {
+        type Error = std::convert::Infallible;
+        fn nonce_for(&self, _commit: &Commit) -> Result<[u8; openssl_utils::aead::NONCE_SIZE], Self::Error> {
+            Ok([42; openssl_utils::aead::NONCE_SIZE])
+        }
+    }
+
+    #[tokio::test]
+    async fn construct() {
+        let me = Arc::new(ME_A.clone());
+        let mut remote = DummyRemote::new(me.clone());
+
+        let initial_commit = COMMIT_0.to_owned();
+
+        let storage = TempDirFilesystemStorage::new();
+        {
+            let mut s = storage.try_exclusive().unwrap();
+            s.save_head(&initial_commit.id).await.unwrap();
+            s.save_commit(&initial_commit).await.unwrap();
+        }
+    
+        let doc_key = AeadKey::gen_key().unwrap();
+        let nonce_src = DummyNonceSource;
+        let initial_commit = CipheredCommit::cipher(&initial_commit, &doc_key, &nonce_src).unwrap();
+        let collaborators = vec![RemoteCollaborator::from_me(&me, &doc_key).unwrap()];
+        let remote_file = remote.create(initial_commit, collaborators).await.unwrap();
+        
+        let _ = File::new(me, doc_key, storage, remote_file);
     }
 }

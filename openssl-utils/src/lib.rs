@@ -1,19 +1,19 @@
 use openssl::error::ErrorStack;
 use std::fmt;
 
-mod pubkey_fingerprint;
+pub mod pubkey_fingerprint;
 pub use pubkey_fingerprint::PublicKeyFingerprintExt;
 
-mod cert;
+pub mod cert;
 pub use cert::{ValidCertificate, X509Ext};
 
-mod sign;
+pub mod sign;
 pub use sign::{SignatureVerifier, Signer};
 
-mod assymetric_secret;
-pub use assymetric_secret::{KeySealer, KeyUnsealer};
+pub mod assymetric_secret;
+pub use assymetric_secret::{KeySealer, KeyUnsealer, SealedAeadKey};
 
-mod aead;
+pub mod aead;
 pub use aead::AeadKey;
 
 #[derive(Clone, Copy)]
@@ -60,3 +60,5 @@ impl fmt::Display for CryptoErr {
         }
     }
 }
+
+impl std::error::Error for CryptoErr {}

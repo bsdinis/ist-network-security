@@ -54,9 +54,6 @@ pub struct UnverifiedCommit {
     pub patch: PatchStr,
 
     pub signature: Vec<u8>,
-
-    #[serde(skip)]
-    _priv: (),
 }
 
 /// Commit builder.
@@ -194,7 +191,6 @@ impl CommitBuilder {
             message: self.message,
             patch: self.patch,
             signature: Vec::new(),
-            _priv: (),
         };
 
         commit.id = commit.gen_id()?;
@@ -219,7 +215,6 @@ impl From<Commit> for UnverifiedCommit {
             message: c.message,
             patch: c.patch,
             signature: c.signature,
-            _priv: (),
         }
     }
 }
