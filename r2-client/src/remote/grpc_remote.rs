@@ -20,9 +20,9 @@ pub struct GrpcRemoteFile {
 }
 
 impl GrpcRemote {
-    pub fn new(uri: Uri, tlsConfig: ClientTlsConfig) -> Result<Self, Error> {
+    pub fn new(uri: Uri, tls_config: ClientTlsConfig) -> Result<Self, Error> {
         let channel = Channel::builder(uri)
-            .tls_config(tlsConfig)?
+            .tls_config(tls_config)?
             .connect_lazy()?;
 
         Ok(GrpcRemote { channel })

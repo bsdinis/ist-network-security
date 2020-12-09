@@ -4,7 +4,7 @@ use crate::{
 };
 use openssl_utils::{
     aead::{AeadKey, SealedSecretBox, UnsealedSecretBox},
-    assymetric_secret::{KeySealer, KeyUnsealer, SealedAeadKey},
+    assymetric_secret::{KeySealer, SealedAeadKey},
     CryptoErr,
 };
 
@@ -23,11 +23,13 @@ pub struct FileMetadata {
     pub document_key: CipheredDocumentKey,
 }
 
+#[derive(Clone)]
 pub struct CipheredCommit {
     pub id: String,
     pub data: SealedSecretBox,
 }
 
+#[derive(Clone)]
 pub struct RemoteCollaborator {
     pub id: CollaboratorId,
     pub document_key: CipheredDocumentKey,
@@ -35,7 +37,7 @@ pub struct RemoteCollaborator {
 
 pub trait CipheredCommitNonceSource {
     type Error;
-    fn nonce_for(&self, commit: &Commit) -> Result<[u8; openssl_utils::aead::NONCE_SIZE], Error>;
+    fn nonce_for(&self, commit: &Commit) -> Result<[u8; openssl_utils::aead::NONCE_SIZE], Self::Error>;
 }
 
 impl RemoteCollaborator {
@@ -60,11 +62,12 @@ impl RemoteCollaborator {
 type Error = Box<dyn std::error::Error>;
 
 impl CipheredCommit {
-    pub fn cipher<E: Into<Error>>(
+    pub fn cipher<E>(
         commit: &Commit,
         key: &DocumentKey,
         nonce_src: &dyn CipheredCommitNonceSource<Error = E>,
-    ) -> Result<CipheredCommit, Error> {
+    ) -> Result<CipheredCommit, Error>
+    where Error: From<E> {
         let id = commit.id.clone();
         let unsealed = UnsealedSecretBox {
             nonce: nonce_src.nonce_for(&commit)?,
