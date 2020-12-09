@@ -251,9 +251,12 @@ pub mod test {
     use crate::model::Snapshot;
     use crate::storage::{Storage, StorageSharedGuard};
     use tempdir::TempDir;
+    use std::sync::Arc;
 
     /// Wrapper for [FilesystemStorage] that creates a temp dir for storage
-    pub struct TempDirFilesystemStorage(TempDir, FilesystemStorage);
+    /// Can be cloned for usage with multiple instances.
+    #[derive(Clone)]
+    pub struct TempDirFilesystemStorage(Arc<TempDir>, FilesystemStorage);
     impl Storage for TempDirFilesystemStorage {
         type Error = <FilesystemStorage as Storage>::Error;
         type SharedGuard = <FilesystemStorage as Storage>::SharedGuard;
@@ -283,7 +286,7 @@ pub mod test {
 
             let storage = FilesystemStorage::new(file_path).expect("failed to create storage");
 
-            TempDirFilesystemStorage(dir, storage)
+            TempDirFilesystemStorage(Arc::new(dir), storage)
         }
     }
 
