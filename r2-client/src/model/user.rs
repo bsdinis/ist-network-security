@@ -46,6 +46,7 @@ pub struct CommitAuthor {
 ///
 /// The local user of r2 must possess their private authentication and signing key
 /// to unseal the document key and author commits.
+#[derive(Clone)]
 pub struct Me {
     auth_id: Vec<u8>,
     sign_id: Vec<u8>,
