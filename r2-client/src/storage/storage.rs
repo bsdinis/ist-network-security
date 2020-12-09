@@ -21,6 +21,11 @@ pub trait StorageSharedGuard: Drop + Send {
     /// Load a persisted commit from repo
     async fn load_commit(&self, commit_id: &str) -> Result<Commit, Self::Error>;
 
+    /// Count commits with prefix
+    /// Undefined behavior for prefixes shorter than 3 bytes
+    async fn count_commits_with_prefix(&self, commit_id_prefix: &str)
+        -> Result<usize, Self::Error>;
+
     /// Read head reference
     /// Will return an error if the head was not saved before.
     async fn load_head(&self) -> Result<String, Self::Error>;

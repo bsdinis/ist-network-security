@@ -13,11 +13,15 @@ use model::*;
 use openssl_utils::{AeadKey, KeyUnsealer, SealedAeadKey};
 use remote::model::*;
 use remote::*;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::path::PathBuf;
 use std::sync::Arc;
 use storage::*;
+
+use std::convert::TryInto;
+
+use openssl_utils::aead::NONCE_SIZE as AEAD_NONCE_SIZE;
 
 /// A File tracked by R2
 pub struct File<S: Storage, RF: RemoteFile>
@@ -26,7 +30,7 @@ where
     S::ExclusiveGuard: Sync,
 {
     me: Arc<Me>,
-    config: RepoConfig,
+    config: RepoConfig<RF::Id>,
     storage: S,
     remote: RF,
 }
@@ -59,12 +63,21 @@ where
     S::ExclusiveGuard: Sync,
     Error: From<S::Error>,
     Error: From<RF::Error>,
+    RF::Id: Serialize + DeserializeOwned + Send + Sync,
+    for<'de> RF::Id: Deserialize<'de>,
 {
-    pub async fn new(me: Arc<Me>, storage: S, remote: RF) -> Result<Self, Error> {
-        let config: RepoConfig = {
+    pub async fn from_existing<R>(me: Arc<Me>, storage: S, remote: R) -> Result<Self, Error>
+    where
+        R: Remote<Id = RF::Id, File = RF>,
+        Error: From<R::Error>,
+    {
+        let config: RepoConfig<RF::Id> = {
             let s = storage.try_exclusive()?;
             s.load(&()).await?
         };
+
+        let remote = remote.open(&config.remote_id).await?;
+
         Ok(File {
             me,
             config,
@@ -73,6 +86,65 @@ where
         })
     }
 
+    pub async fn init<R>(
+        me: Arc<Me>,
+        storage: S,
+        mut remote: R,
+        initial_commit_message: String,
+        _other_collaborators: Vec<String>,
+    ) -> Result<Self, Error>
+    where
+        R: Remote<Id = RF::Id, File = RF>,
+        Error: From<R::Error>,
+    {
+        let mut s = storage.try_exclusive()?;
+
+        let document_key = AeadKey::gen_key()?;
+        let initial_commit = {
+            let empty = Snapshot::empty();
+            let current = s.load_current_snapshot().await?;
+            let patch = empty.diff(&current);
+
+            CommitBuilder::root_commit(initial_commit_message, patch).author(&me)?
+        };
+        s.save_commit(&initial_commit).await?;
+        s.save_head(&initial_commit.id).await?;
+
+        // Safety: commit is the first in the repository with this document key and was saved
+        // no other commit will have this ID prefix with this document key
+        let nonce = unsafe { nonce_for_commit(&initial_commit) };
+        let ciphered_commit = CipheredCommit::cipher(&initial_commit, &document_key, nonce)?;
+
+        let collaborators = vec![RemoteCollaborator::from_me(&me, &document_key)?];
+        // TODO: add other collaborators
+
+        let remote = remote.create(ciphered_commit, collaborators).await?;
+        s.save_remote_head(&initial_commit.id).await?;
+
+        let config = RepoConfig {
+            document_key,
+            remote_id: remote.id().to_owned(),
+        };
+        s.save(&config).await?;
+
+        Ok(File {
+            me,
+            config,
+            storage,
+            remote,
+        })
+    }
+}
+
+impl<S: Storage, RF: RemoteFile> File<S, RF>
+where
+    S::SharedGuard: Sync,
+    S::ExclusiveGuard: Sync,
+    Error: From<S::Error>,
+    Error: From<RF::Error>,
+    RF::Id: Serialize + DeserializeOwned + Send + Sync,
+    for<'de> RF::Id: Deserialize<'de>,
+{
     /// Compute the patch that transforms revision a into revision b
     pub async fn diff(&self, a: RichRevisionId, b: RichRevisionId) -> Result<PatchStr, Error> {
         let storage = self.storage.try_shared()?;
@@ -212,12 +284,23 @@ where
     }
 }
 
+unsafe fn nonce_for_commit(commit: &Commit) -> [u8; AEAD_NONCE_SIZE] {
+    let id_bytes = hex::decode(&commit.id).expect("Bad commit ID");
+
+    id_bytes[0..AEAD_NONCE_SIZE].to_owned().try_into().unwrap()
+}
+
 #[derive(Serialize, Deserialize)]
-struct RepoConfig {
+struct RepoConfig<ID> {
+    remote_id: ID,
     document_key: AeadKey,
 }
 
-impl StorageObject for RepoConfig {
+impl<T> StorageObject for RepoConfig<T>
+where
+    T: Serialize + DeserializeOwned + Send + Sync,
+    for<'de> T: Deserialize<'de>,
+{
     type Id = ();
 
     fn load_path<ID>(root: &PathBuf, _id: &ID) -> PathBuf
@@ -328,55 +411,29 @@ impl<T: StorageExclusiveGuard + Sync> StorageExclusiveGuardExt for T where Error
 
 #[cfg(test)]
 mod test {
-    use super::RepoConfig;
-    use openssl_utils::AeadKey;
-
     use super::File;
-    use crate::model::Commit;
-    use crate::remote::model::{CipheredCommit, CipheredCommitNonceSource};
-    use crate::remote::{model::RemoteCollaborator, DummyRemote, Remote};
+    use crate::remote::DummyRemote;
     use crate::storage::test::TempDirFilesystemStorage;
-    use crate::storage::{Storage, StorageExclusiveGuard};
-    use crate::test_utils::{commit::*, user::*};
+    use crate::test_utils::user::*;
     use std::sync::Arc;
-
-    struct DummyNonceSource;
-    impl CipheredCommitNonceSource for DummyNonceSource {
-        type Error = std::convert::Infallible;
-        fn nonce_for(
-            &self,
-            _commit: &Commit,
-        ) -> Result<[u8; openssl_utils::aead::NONCE_SIZE], Self::Error> {
-            Ok([42; openssl_utils::aead::NONCE_SIZE])
-        }
-    }
 
     #[tokio::test]
     async fn construct() {
         let me = Arc::new(ME_A.clone());
-        let mut remote = DummyRemote::new(me.clone());
+        let remote = DummyRemote::new(me.clone());
 
-        let initial_commit = COMMIT_0.to_owned();
-
-        let doc_key = AeadKey::gen_key().unwrap();
         let storage = TempDirFilesystemStorage::new();
-        {
-            let mut s = storage.try_exclusive().unwrap();
-            s.save_head(&initial_commit.id).await.unwrap();
-            s.save_commit(&initial_commit).await.unwrap();
+        let f = File::init(
+            me.clone(),
+            storage.clone(),
+            remote.clone(),
+            "initial commit".to_owned(),
+            vec![],
+        )
+        .await
+        .unwrap();
+        std::mem::drop(f);
 
-            s.save(&RepoConfig {
-                document_key: doc_key.clone(),
-            })
-            .await
-            .unwrap();
-        }
-
-        let nonce_src = DummyNonceSource;
-        let initial_commit = CipheredCommit::cipher(&initial_commit, &doc_key, &nonce_src).unwrap();
-        let collaborators = vec![RemoteCollaborator::from_me(&me, &doc_key).unwrap()];
-        let remote_file = remote.create(initial_commit, collaborators).await.unwrap();
-
-        let _ = File::new(me, storage, remote_file);
+        let _f = File::from_existing(me, storage, remote).await.unwrap();
     }
 }

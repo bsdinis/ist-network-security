@@ -35,14 +35,6 @@ pub struct RemoteCollaborator {
     pub document_key: CipheredDocumentKey,
 }
 
-pub trait CipheredCommitNonceSource {
-    type Error;
-    fn nonce_for(
-        &self,
-        commit: &Commit,
-    ) -> Result<[u8; openssl_utils::aead::NONCE_SIZE], Self::Error>;
-}
-
 impl RemoteCollaborator {
     pub fn from_doc_collaborator(
         collaborator: &DocCollaborator,
@@ -65,17 +57,14 @@ impl RemoteCollaborator {
 type Error = Box<dyn std::error::Error>;
 
 impl CipheredCommit {
-    pub fn cipher<E>(
+    pub fn cipher(
         commit: &Commit,
         key: &DocumentKey,
-        nonce_src: &dyn CipheredCommitNonceSource<Error = E>,
-    ) -> Result<CipheredCommit, Error>
-    where
-        Error: From<E>,
-    {
+        nonce: [u8; openssl_utils::aead::NONCE_SIZE],
+    ) -> Result<CipheredCommit, Error> {
         let id = commit.id.clone();
         let unsealed = UnsealedSecretBox {
-            nonce: nonce_src.nonce_for(&commit)?,
+            nonce,
             aad: vec![],
             plaintext: toml::to_string(commit)?.into_bytes(),
         };

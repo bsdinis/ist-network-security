@@ -53,6 +53,8 @@ pub struct Me {
     sign_id: Vec<u8>,
     auth_private_key: Rsa<Private>,
     sign_private_key: Rsa<Private>,
+    auth_certificate: ValidCertificate,
+    sign_certificate: ValidCertificate,
 }
 
 /// A [DocCollaborator] whose certificate was not verified against the CA cert.
@@ -130,9 +132,9 @@ impl UnverifiedCommitAuthor {
 impl Me {
     pub fn from_certs(
         sign_private_key: Rsa<Private>,
-        sign_cert: ValidCertificate,
+        sign_certificate: ValidCertificate,
         auth_private_key: Rsa<Private>,
-        auth_cert: ValidCertificate,
+        auth_certificate: ValidCertificate,
     ) -> Result<Self, CryptoErr> {
         let sign_id = sign_private_key.pubkey_fingerprint()?;
         let auth_id = auth_private_key.pubkey_fingerprint()?;
@@ -140,25 +142,27 @@ impl Me {
         // Key IDs must match
         assert_eq!(
             sign_id,
-            sign_cert.pubkey_fingerprint()?,
+            sign_certificate.pubkey_fingerprint()?,
             "signing private key and certificate mismatch"
         );
         assert_eq!(
             auth_id,
-            auth_cert.pubkey_fingerprint()?,
+            auth_certificate.pubkey_fingerprint()?,
             "authentication private key and certificate mistach"
         );
 
         // Ensure keys are properly used
-        sign_cert
+        sign_certificate
             .key_can(&COMMIT_AUTHOR_KEY_USAGES)
-            .and(auth_cert.key_can(&DOC_COLLABORATOR_KEY_USAGES))?;
+            .and(auth_certificate.key_can(&DOC_COLLABORATOR_KEY_USAGES))?;
 
         Ok(Me {
             sign_id,
             auth_id,
             sign_private_key,
             auth_private_key,
+            sign_certificate,
+            auth_certificate,
         })
     }
 
@@ -168,6 +172,26 @@ impl Me {
 
     pub fn doc_collaborator_id(&self) -> &[u8] {
         &self.auth_id
+    }
+
+    pub fn auth_private_key_pem(&self) -> Vec<u8> {
+        self.auth_private_key
+            .private_key_to_pem()
+            .expect("OpenSSL: error converting private key to PEM")
+    }
+
+    pub fn auth_certificate_pem(&self) -> Vec<u8> {
+        self.auth_certificate
+            .cert
+            .to_pem()
+            .expect("OpenSSL: error converting certificate to PEM")
+    }
+
+    pub fn sign_certificate_pem(&self) -> Vec<u8> {
+        self.sign_certificate
+            .cert
+            .to_pem()
+            .expect("OpenSSL: error converting certificate to PEM")
     }
 }
 

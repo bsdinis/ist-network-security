@@ -161,6 +161,26 @@ macro_rules! impl_shared {
                     .map_err(|e| e.into())
             }
 
+            async fn count_commits_with_prefix(
+                &self,
+                commit_id_prefix: &str,
+            ) -> Result<usize, Self::Error> {
+                let commit_file_path = commit_path(&self.root, commit_id_prefix);
+                let commit_folder = commit_file_path.parent().unwrap();
+
+                let mut entries = fs::read_dir(commit_folder).await?;
+                let mut count = 0usize;
+
+                while let Some(entry) = entries.next_entry().await? {
+                    let id = entry.file_name().into_string().unwrap();
+                    if id.starts_with(commit_id_prefix) {
+                        count += 1;
+                    }
+                }
+
+                Ok(count)
+            }
+
             async fn load_head(&self) -> Result<String, Self::Error> {
                 Ok(fs::read_to_string(head_path(&self.root)).await?)
             }

@@ -77,9 +77,9 @@ impl Remote for DummyRemote {
         Ok(file)
     }
 
-    async fn open(&self, id: Self::Id) -> Result<Self::File, Self::Error> {
+    async fn open(&self, id: &Self::Id) -> Result<Self::File, Self::Error> {
         let files = self.files.lock().await;
-        let mut file = files[id].clone();
+        let mut file = files[*id].clone();
         file.current_user = self.current_user.clone();
 
         Ok(file)

@@ -4,7 +4,7 @@ use super::model::*;
 pub trait Remote {
     type Error;
     type File: RemoteFile<Id = Self::Id>;
-    type Id;
+    type Id: Clone + Send + Sync;
 
     async fn create(
         &mut self,
@@ -12,13 +12,13 @@ pub trait Remote {
         collaborators: Vec<RemoteCollaborator>,
     ) -> Result<Self::File, Self::Error>;
 
-    async fn open(&self, id: Self::Id) -> Result<Self::File, Self::Error>;
+    async fn open(&self, id: &Self::Id) -> Result<Self::File, Self::Error>;
 }
 
 #[tonic::async_trait]
 pub trait RemoteFile {
     type Error;
-    type Id;
+    type Id: Clone + Send + Sync;
 
     async fn load_metadata(&mut self) -> Result<FileMetadata, Self::Error>;
 

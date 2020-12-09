@@ -1,12 +1,14 @@
 use super::model::*;
 use super::{Remote, RemoteFile};
+use crate::model::Me;
 use openssl_utils::{aead::SealedSecretBox, SealedAeadKey};
 use protos::client_api_client::ClientApiClient;
 
-use tonic::transport::{Channel, ClientTlsConfig, Uri};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
 use tonic::Request;
 
 use std::convert::{TryFrom, TryInto};
+use std::sync::Arc;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -20,7 +22,14 @@ pub struct GrpcRemoteFile {
 }
 
 impl GrpcRemote {
-    pub fn new(uri: Uri, tls_config: ClientTlsConfig) -> Result<Self, Error> {
+    pub fn new(uri: Uri, me: Arc<Me>, ca_cert_pem: &[u8]) -> Result<Self, Error> {
+        let tls_config = ClientTlsConfig::new()
+            .identity(Identity::from_pem(
+                me.auth_certificate_pem(),
+                me.auth_private_key_pem(),
+            ))
+            .ca_certificate(Certificate::from_pem(ca_cert_pem));
+
         let channel = Channel::builder(uri)
             .tls_config(tls_config)?
             .connect_lazy()?;
@@ -60,9 +69,9 @@ impl Remote for GrpcRemote {
         Ok(file)
     }
 
-    async fn open(&self, id: Self::Id) -> Result<Self::File, Self::Error> {
+    async fn open(&self, id: &Self::Id) -> Result<Self::File, Self::Error> {
         Ok(GrpcRemoteFile {
-            id,
+            id: id.clone(),
             client: ClientApiClient::new(self.channel.clone()),
         })
     }

@@ -143,7 +143,7 @@ impl UnverifiedCommit {
             .map_err(|e| format!("error computing commit hash: {:?}", e))?
             .to_vec();
 
-        Ok(format!("{:x?}", digest))
+        Ok(hex::encode(digest))
     }
 }
 
