@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate lazy_static;
 
+mod collab_fetcher;
 pub mod model;
 pub mod remote;
 pub mod storage;
@@ -9,6 +10,7 @@ mod test_utils;
 
 type Error = Box<dyn std::error::Error>;
 
+pub use collab_fetcher::*;
 use model::*;
 use openssl_utils::{AeadKey, KeyUnsealer, SealedAeadKey};
 use remote::model::*;
@@ -24,15 +26,21 @@ use std::convert::TryInto;
 use openssl_utils::aead::NONCE_SIZE as AEAD_NONCE_SIZE;
 
 /// A File tracked by R2
-pub struct File<S: Storage, RF: RemoteFile>
+pub struct File<S: Storage, RF: RemoteFile, CF: CollaboratorFetcher>
 where
     S::SharedGuard: Sync,
     S::ExclusiveGuard: Sync,
+    CF: Sync,
+    Error: From<S::Error>,
+    Error: From<RF::Error>,
+    RF::Id: Serialize + DeserializeOwned + Send + Sync,
+    for<'de> RF::Id: Deserialize<'de>,
 {
     me: Arc<Me>,
     config: RepoConfig<RF::Id>,
     storage: S,
     remote: RF,
+    collab_fetcher: CF,
 }
 
 /// Identifier of a revision
@@ -57,16 +65,22 @@ pub enum ResetHardness {
     Soft,
 }
 
-impl<S: Storage, RF: RemoteFile> File<S, RF>
+impl<S: Storage, RF: RemoteFile, CF: CollaboratorFetcher> File<S, RF, CF>
 where
     S::SharedGuard: Sync,
     S::ExclusiveGuard: Sync,
+    CF: Sync,
     Error: From<S::Error>,
     Error: From<RF::Error>,
     RF::Id: Serialize + DeserializeOwned + Send + Sync,
     for<'de> RF::Id: Deserialize<'de>,
 {
-    pub async fn from_existing<R>(me: Arc<Me>, storage: S, remote: R) -> Result<Self, Error>
+    pub async fn from_existing<R>(
+        collab_fetcher: CF,
+        me: Arc<Me>,
+        storage: S,
+        remote: R,
+    ) -> Result<Self, Error>
     where
         R: Remote<Id = RF::Id, File = RF>,
         Error: From<R::Error>,
@@ -83,10 +97,12 @@ where
             config,
             storage,
             remote,
+            collab_fetcher,
         })
     }
 
     pub async fn init<R>(
+        collab_fetcher: CF,
         me: Arc<Me>,
         storage: S,
         mut remote: R,
@@ -115,8 +131,14 @@ where
         let nonce = unsafe { nonce_for_commit(&initial_commit) };
         let ciphered_commit = CipheredCommit::cipher(&initial_commit, &document_key, nonce)?;
 
-        let collaborators = vec![RemoteCollaborator::from_me(&me, &document_key)?];
-        // TODO: add other collaborators
+        let mut collaborators = vec![RemoteCollaborator::from_me(&me, &document_key)?];
+        for id in _other_collaborators {
+            let id = hex::decode(id)?;
+            let collab = collab_fetcher.fetch_doc_collaborator(&id).await?;
+            let collab = RemoteCollaborator::from_doc_collaborator(&collab, &document_key)?;
+
+            collaborators.push(collab);
+        }
 
         let remote = remote.create(ciphered_commit, collaborators).await?;
         s.save_remote_head(&initial_commit.id).await?;
@@ -132,14 +154,16 @@ where
             config,
             storage,
             remote,
+            collab_fetcher,
         })
     }
 }
 
-impl<S: Storage, RF: RemoteFile> File<S, RF>
+impl<S: Storage, RF: RemoteFile, CF: CollaboratorFetcher> File<S, RF, CF>
 where
     S::SharedGuard: Sync,
     S::ExclusiveGuard: Sync,
+    CF: Sync,
     Error: From<S::Error>,
     Error: From<RF::Error>,
     RF::Id: Serialize + DeserializeOwned + Send + Sync,
@@ -229,14 +253,14 @@ where
 
         let mut commits_to_apply: Vec<Commit> = vec![];
         let commit = self.remote.load_commit(&metadata.head).await?;
-        let commit = self.decipher_commit(&s, commit).await?;
+        let commit = self.decipher_commit(&mut s, commit).await?;
         commits_to_apply.push(commit);
 
         let mut prev_id_opt = commits_to_apply.last().unwrap().prev_commit_id.as_ref();
         while prev_id_opt != Some(&cur_remote_head) && prev_id_opt != None {
             let prev_id = prev_id_opt.unwrap();
             let commit = self.remote.load_commit(&prev_id).await?;
-            let commit = self.decipher_commit(&s, commit).await?;
+            let commit = self.decipher_commit(&mut s, commit).await?;
             commits_to_apply.push(commit);
 
             prev_id_opt = commits_to_apply.last().unwrap().prev_commit_id.as_ref();
@@ -255,14 +279,19 @@ where
         //CipheredCommit::cipher(commit, self.document_key, ?)
     }
 
-    async fn decipher_commit<SG: StorageSharedGuard<Error = S::Error>>(
+    async fn decipher_commit<SG: StorageExclusiveGuard<Error = S::Error>>(
         &self,
-        s: &SG,
+        s: &mut SG,
         commit: CipheredCommit,
     ) -> Result<Commit, Error> {
         let unverified = commit.decipher(&self.config.document_key)?;
         let author = match s.load_commit_author(&unverified.author_id).await? {
-            None => unimplemented!("can't load author certificates automatically yet"),
+            None => {
+                let author = self.collab_fetcher.fetch_commit_author(&unverified.author_id).await?;
+                s.save_commit_author(&author).await?;
+
+                author
+            },
             Some(a) => a,
         };
 
@@ -415,15 +444,18 @@ mod test {
     use crate::remote::DummyRemote;
     use crate::storage::test::TempDirFilesystemStorage;
     use crate::test_utils::user::*;
+    use crate::collab_fetcher::TestCollaboratorFetcher;
     use std::sync::Arc;
 
     #[tokio::test]
     async fn construct() {
         let me = Arc::new(ME_A.clone());
         let remote = DummyRemote::new(me.clone());
+        let collab_fetcher = TestCollaboratorFetcher::new();
 
         let storage = TempDirFilesystemStorage::new();
         let f = File::init(
+            collab_fetcher,
             me.clone(),
             storage.clone(),
             remote.clone(),
@@ -434,6 +466,7 @@ mod test {
         .unwrap();
         std::mem::drop(f);
 
-        let _f = File::from_existing(me, storage, remote).await.unwrap();
+        let collab_fetcher = TestCollaboratorFetcher::new();
+        let _f = File::from_existing(collab_fetcher, me, storage, remote).await.unwrap();
     }
 }

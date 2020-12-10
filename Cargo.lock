@@ -994,6 +994,7 @@ dependencies = [
  "protos",
  "serde",
  "tempdir",
+ "thiserror",
  "tokio",
  "toml",
  "tonic",
