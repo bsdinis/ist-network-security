@@ -28,7 +28,7 @@ pub enum KeyUsage {
 pub enum CryptoErr {
     #[error("OpenSSL Error: {:?}", .0)]
     OpensslError(#[from] ErrorStack),
-    
+
     #[error("Certificate missing Common Name field")]
     NoCommonName,
 

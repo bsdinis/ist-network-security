@@ -196,7 +196,7 @@ fn x509_builder(
     key: &PKey<Private>,
 ) -> Result<X509Builder, Error> {
     let now = Asn1Time::days_from_now(0)?;
-    let now_1000y = Asn1Time::days_from_now(365 * 1000)?;
+    let now_1y = Asn1Time::days_from_now(365 * 1)?;
     let serial_number = NEXT_SERIAL_NUMBER.fetch_add(1, Ordering::Relaxed);
     let serial_number = BigNum::from_u32(serial_number)?;
     let serial_number = Asn1Integer::from_bn(&serial_number)?;
@@ -205,7 +205,7 @@ fn x509_builder(
     let mut builder = X509Builder::new()?;
     builder.set_version(2)?;
     builder.set_not_before(&now)?;
-    builder.set_not_after(&now_1000y)?;
+    builder.set_not_after(&now_1y)?;
     builder.set_serial_number(&serial_number)?;
     builder.set_issuer_name(&ca_name)?;
     builder.set_subject_name(&subj_name)?;

@@ -1,7 +1,11 @@
 use super::{CryptoErr, KeyUsage, PublicKeyFingerprintExt};
-use openssl::nid::Nid;
 use openssl::x509::*;
+use openssl::{asn1::Asn1Time, nid::Nid};
 
+pub const CERT_EXPIRATION_TOLERANCE_SECS: i32 = 60 * 10;
+
+/// A certificate validated against a valid CA
+/// ATTENTION: May be expired!
 #[derive(Clone)]
 pub struct ValidCertificate {
     pub cert: X509,
@@ -20,6 +24,8 @@ pub trait X509Ext: PublicKeyFingerprintExt {
     ) -> Result<ValidCertificate, CryptoErr>;
 
     unsafe fn validate_unchecked(self) -> ValidCertificate;
+
+    fn not_expired(&self) -> Result<(), CryptoErr>;
 }
 
 impl PublicKeyFingerprintExt for X509 {
@@ -107,6 +113,21 @@ impl X509Ext for X509 {
             _priv: (),
         }
     }
+
+    fn not_expired(&self) -> Result<(), CryptoErr> {
+        let not_before = self.not_before();
+        let not_after = self.not_after();
+        let now = Asn1Time::days_from_now(0)?;
+
+        let b_n = not_before.diff(&now)?;
+        let n_a = now.diff(not_after)?;
+
+        if b_n.secs > CERT_EXPIRATION_TOLERANCE_SECS || n_a.secs > CERT_EXPIRATION_TOLERANCE_SECS {
+            return Err(CryptoErr::Expired);
+        }
+
+        Ok(())
+    }
 }
 
 impl PublicKeyFingerprintExt for ValidCertificate {
@@ -134,6 +155,10 @@ impl X509Ext for ValidCertificate {
 
     unsafe fn validate_unchecked(self) -> ValidCertificate {
         self
+    }
+
+    fn not_expired(&self) -> Result<(), CryptoErr> {
+        self.cert.not_expired()
     }
 }
 
@@ -203,6 +228,30 @@ mod test {
     validate_ok_test!(
         val_serv_cert_ok,
         "test_certs/server.cert.pem",
+        &[
+            KeyUsage::DigitalSignature,
+            KeyUsage::KeyAgreement,
+            KeyUsage::KeyEncipherment
+        ]
+    );
+
+    validate_ok_test!(
+        val_cl_auth_expired_cert_ok,
+        "test_certs/client-auth.expired.cert.pem",
+        &[
+            KeyUsage::DigitalSignature,
+            KeyUsage::KeyAgreement,
+            KeyUsage::KeyEncipherment
+        ]
+    );
+    validate_ok_test!(
+        val_cl_sign_expired_cert_ok,
+        "test_certs/client-sign.expired.cert.pem",
+        &[KeyUsage::DigitalSignature, KeyUsage::NonRepudiation]
+    );
+    validate_ok_test!(
+        val_serv_cert_expired_ok,
+        "test_certs/server.expired.cert.pem",
         &[
             KeyUsage::DigitalSignature,
             KeyUsage::KeyAgreement,
