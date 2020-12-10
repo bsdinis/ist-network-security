@@ -5,11 +5,13 @@ use openssl_utils::{aead::SealedSecretBox, SealedAeadKey};
 use protos::client_api_client::ClientApiClient;
 
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
-use tonic::Request;
+use tonic::{Request, Status};
 
 use iterutils::{MapIntoExt, MapTryIntoExt};
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
+
+use thiserror::Error;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -20,6 +22,21 @@ pub struct GrpcRemote {
 pub struct GrpcRemoteFile {
     id: String,
     client: ClientApiClient<Channel>,
+}
+
+#[derive(Debug, Error)]
+pub enum GrpcRemoteError {
+    #[error("Server sent a nonce with the wrong size")]
+    BadNonceSize,
+
+    #[error("Server sent a tag with the wrong size")]
+    BadTagSize,
+
+    #[error("Server did not send required field {}", .0)]
+    MissingField(&'static str),
+
+    #[error("Server sent unexpected status: {:?}", .0)]
+    UnexpectedStatus(#[from] Status),
 }
 
 impl GrpcRemote {
@@ -41,7 +58,7 @@ impl GrpcRemote {
 
 #[tonic::async_trait]
 impl Remote for GrpcRemote {
-    type Error = Error;
+    type Error = GrpcRemoteError;
     type File = GrpcRemoteFile;
     type Id = String;
 
@@ -80,7 +97,7 @@ impl Remote for GrpcRemote {
 
 #[tonic::async_trait]
 impl RemoteFile for GrpcRemoteFile {
-    type Error = Error;
+    type Error = GrpcRemoteError;
     type Id = String;
 
     async fn load_metadata(&mut self) -> Result<FileMetadata, Self::Error> {
@@ -101,7 +118,9 @@ impl RemoteFile for GrpcRemoteFile {
 
         let resp = self.client.get_commit(req).await?.into_inner();
 
-        Ok(resp.commit.try_into()?)
+        resp.commit.map_try_into()?
+            .ok_or(GrpcRemoteError::MissingField("commit"))
+            .map_err(|e|e.into())
     }
 
     async fn commit(&mut self, commit: CipheredCommit) -> Result<(), Self::Error> {
@@ -183,39 +202,19 @@ impl Into<protos::Commit> for CipheredCommit {
     }
 }
 
-#[derive(Debug)]
-pub struct BadDataFromServer;
-
-use std::fmt;
-impl fmt::Display for BadDataFromServer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Error: BadDataFromServer")
-    }
-}
-
-impl std::error::Error for BadDataFromServer {}
-
 impl TryFrom<protos::Commit> for CipheredCommit {
-    type Error = BadDataFromServer;
+    type Error = GrpcRemoteError;
 
     fn try_from(msg: protos::Commit) -> Result<Self, Self::Error> {
         Ok(CipheredCommit {
             id: msg.commit_id,
             data: SealedSecretBox {
                 ciphertext: msg.ciphertext,
-                nonce: msg.nonce.try_into().map_err(|_| BadDataFromServer)?,
+                nonce: msg.nonce.try_into().map_err(|_| GrpcRemoteError::BadNonceSize)?,
                 aad: msg.aad,
-                tag: msg.tag.try_into().map_err(|_| BadDataFromServer)?,
+                tag: msg.tag.try_into().map_err(|_| GrpcRemoteError::BadTagSize)?,
             },
         })
-    }
-}
-
-impl TryFrom<Option<protos::Commit>> for CipheredCommit {
-    type Error = BadDataFromServer;
-
-    fn try_from(maybe_msg: Option<protos::Commit>) -> Result<Self, Self::Error> {
-        maybe_msg.map_try_into()?.ok_or(BadDataFromServer)
     }
 }
 
