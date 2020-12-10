@@ -194,7 +194,9 @@ where
             ucommit.author(&self.me)?
         };
 
-        self.remote.commit(self.cipher_commit(&commit)?).await?;
+        self.remote
+            .commit(self.cipher_commit(&storage, &commit).await?)
+            .await?;
         storage.save_commit(&commit).await?;
         storage.save_head(&commit.id).await?;
 
@@ -280,14 +282,26 @@ where
         Ok(Some(commits_to_apply.remove(0)))
     }
 
-    fn cipher_commit(&self, _commit: &Commit) -> Result<CipheredCommit, Error> {
-        unimplemented!()
-        //CipheredCommit::cipher(commit, self.document_key, ?)
+    async fn cipher_commit(
+        &self,
+        storage: &S::ExclusiveGuard,
+        commit: &Commit,
+    ) -> Result<CipheredCommit, Error> {
+        // Safety: nonce is the prefix of the commit hash
+        // we will then check that no other commit exists with the same prefix
+        let nonce = unsafe { nonce_for_commit(&commit) };
+        let nonce_str = hex::encode(&nonce);
+
+        if storage.count_commits_with_prefix(&nonce_str).await? > 0 {
+            return Err("Commit hash prefix collision. Try again in a bit.")?;
+        }
+
+        CipheredCommit::cipher(commit, &self.config.document_key, nonce)
     }
 
-    async fn decipher_commit<SG: StorageExclusiveGuard<Error = S::Error>>(
+    async fn decipher_commit(
         &self,
-        s: &mut SG,
+        s: &mut S::ExclusiveGuard,
         commit: CipheredCommit,
     ) -> Result<Commit, Error> {
         let unverified = commit.decipher(&self.config.document_key)?;
