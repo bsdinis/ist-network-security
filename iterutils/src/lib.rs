@@ -20,6 +20,15 @@ where
         self.drain(..).map(|u| u.into()).collect()
     }
 }
+impl<U, F, T, E> MapIntoExt<Result<T, E>> for Result<U, F>
+where
+    U: Into<T>,
+    F: Into<E>,
+{
+    fn map_into(self) -> Result<T, E> {
+        self.map(|u| u.into()).map_err(|f| f.into())
+    }
+}
 
 pub trait MapTryIntoExt<T, E> {
     fn map_try_into(self) -> Result<T, E>;

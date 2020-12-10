@@ -131,7 +131,7 @@ impl UnverifiedCommit {
             .chain(&self.author_id)
             .chain(self.ts.to_rfc3339().as_bytes())
             .chain(self.message.as_bytes())
-            .chain(self.patch.as_bytes())
+            .chain(self.patch.bytes())
             .cloned()
             .collect()
     }

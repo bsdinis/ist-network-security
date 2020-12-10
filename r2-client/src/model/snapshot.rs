@@ -2,6 +2,8 @@ use diffy::{apply, create_patch, Patch};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display};
 
+use iterutils::MapIntoExt;
+
 type Error = Box<dyn std::error::Error>; // TODO: use more specific type
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -13,6 +15,10 @@ pub struct Snapshot(String);
 impl Snapshot {
     pub fn empty() -> Snapshot {
         Snapshot(String::new())
+    }
+
+    pub fn merge3(ancestor: Self, ours: Self, theirs: Self) -> Result<Self, Self> {
+        diffy::merge(&ancestor.0, &ours.0, &theirs.0).map_into()
     }
 
     pub fn apply(&self, patch: &PatchStr) -> Result<Self, Error> {
@@ -29,8 +35,13 @@ impl Snapshot {
 }
 
 impl PatchStr {
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn bytes(&self) -> &[u8] {
         self.as_ref()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        let p = Patch::from_str(self.as_ref()).unwrap();
+        p.hunks().is_empty()
     }
 }
 

@@ -259,27 +259,76 @@ where
             return Ok(None);
         }
 
-        let mut commits_to_apply: Vec<Commit> = vec![];
+        let mut commits_to_fetch: Vec<Commit> = vec![];
         let commit = self.remote.load_commit(&metadata.head).await?;
         let commit = self.decipher_commit(&mut s, commit).await?;
-        commits_to_apply.push(commit);
+        commits_to_fetch.push(commit);
 
-        let mut prev_id_opt = commits_to_apply.last().unwrap().prev_commit_id.as_ref();
+        let mut prev_id_opt = commits_to_fetch.last().unwrap().prev_commit_id.as_ref();
         while prev_id_opt != Some(&cur_remote_head) && prev_id_opt != None {
             let prev_id = prev_id_opt.unwrap();
             let commit = self.remote.load_commit(&prev_id).await?;
             let commit = self.decipher_commit(&mut s, commit).await?;
-            commits_to_apply.push(commit);
+            commits_to_fetch.push(commit);
 
-            prev_id_opt = commits_to_apply.last().unwrap().prev_commit_id.as_ref();
+            prev_id_opt = commits_to_fetch.last().unwrap().prev_commit_id.as_ref();
         }
 
-        for commit in commits_to_apply.iter().rev() {
+        for commit in commits_to_fetch.iter().rev() {
             s.save_commit(commit).await?;
             s.save_remote_head(&commit.id).await?;
         }
 
-        Ok(Some(commits_to_apply.remove(0)))
+        Ok(Some(commits_to_fetch.remove(0)))
+    }
+
+    /// Merge changes from remote HEAD to current state
+    /// Only supports fast forwarding HEAD (but still performs 3-way merge to preserve uncommitted changes)
+    pub async fn merge_from_remote(&self, force: bool) -> Result<(), Error> {
+        let mut s = self.storage.try_exclusive()?;
+
+        let current_state = s.load_current_snapshot().await?;
+
+        let head = s.load_head().await?;
+        let remote_head = s.load_remote_head().await?;
+
+        let commits_to_apply = s.walk_back_from_commit(&remote_head, Some(&head)).await?;
+
+        // early exit if no commits need to be applied
+        if commits_to_apply.is_empty() {
+            return Ok(());
+        }
+
+        let ancestor = if commits_to_apply.last().unwrap().id != head {
+            // history rewritten in remote
+            if !force {
+                return Err("History rewritten in remote. Can't merge without force")?;
+            }
+
+            Snapshot::empty()
+        } else {
+            // fast-forwarding, use the current head
+            s.snapshot(RichRevisionId::RelativeHead(0)).await?
+        };
+
+        let theirs = s
+            .snapshot(RichRevisionId::CommitId(remote_head.clone()))
+            .await?;
+        let ours = current_state;
+        let merged = Snapshot::merge3(ancestor, ours, theirs);
+
+        let merged_snapshot = match &merged {
+            Ok(a) => a,
+            Err(a) => a,
+        };
+        s.save_current_snapshot(merged_snapshot).await?;
+        s.save_head(&remote_head).await?;
+
+        if merged.is_err() {
+            Err("Merged with conflicts. Please fix them and commit the result.".into())
+        } else {
+            Ok(())
+        }
     }
 
     async fn cipher_commit(
@@ -400,7 +449,8 @@ where
         Ok(snapshot)
     }
 
-    /// Given a commit ID, return a vector containing it and all
+    /// Get vector with all commits from [from_id] to [to_id], in that order.
+    /// [from_id] must be after [to_id] in the commit DAG.
     async fn walk_back_from_commit(
         &self,
         from_id: &str,
