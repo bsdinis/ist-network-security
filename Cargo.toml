@@ -7,4 +7,5 @@ members = [
 	"r2-identity",
 	"openssl-utils",
 	"test-ca-setup",
+	"iterutils",
 ]

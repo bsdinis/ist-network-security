@@ -7,6 +7,7 @@ use protos::client_api_client::ClientApiClient;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
 use tonic::Request;
 
+use iterutils::{MapIntoExt, MapTryIntoExt};
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 
@@ -224,56 +225,5 @@ impl From<protos::GetMetadataResponse> for FileMetadata {
             head: msg.head,
             document_key: SealedAeadKey(msg.ciphered_document_key),
         }
-    }
-}
-
-trait MapTryIntoExt<T, E> {
-    fn map_try_into(self) -> Result<T, E>;
-}
-impl<U, T, E> MapTryIntoExt<Option<T>, E> for Option<U>
-where
-    U: TryInto<T, Error = E>,
-{
-    fn map_try_into(self) -> Result<Option<T>, E> {
-        self.map(|u| u.try_into()).transpose()
-    }
-}
-
-trait MapIntoExt<T> {
-    fn map_into(self) -> T;
-}
-impl<U, T> MapIntoExt<Option<T>> for Option<U>
-where
-    U: Into<T>,
-{
-    fn map_into(self) -> Option<T> {
-        self.map(|u| u.into())
-    }
-}
-impl<U, T> MapIntoExt<Vec<T>> for Vec<U>
-where
-    U: Into<T>,
-{
-    fn map_into(mut self) -> Vec<T> {
-        self.drain(..).map(|u| u.into()).collect()
-    }
-}
-
-trait TryCollectExt<V, E, B> {
-    fn try_collect(self) -> Result<B, E>;
-}
-
-impl<I, V, E> TryCollectExt<V, E, Vec<V>> for I
-where
-    I: Iterator<Item = Result<V, E>>,
-{
-    fn try_collect(mut self) -> Result<Vec<V>, E> {
-        let mut res = Vec::new();
-
-        while let Some(item) = self.next() {
-            res.push(item?);
-        }
-
-        Ok(res)
     }
 }
