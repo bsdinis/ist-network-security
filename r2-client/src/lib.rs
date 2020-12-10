@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use storage::*;
 
+use iterutils::TryCollectExt;
 use std::convert::TryInto;
 
 use openssl_utils::aead::NONCE_SIZE as AEAD_NONCE_SIZE;
@@ -107,7 +108,7 @@ where
         storage: S,
         mut remote: R,
         initial_commit_message: String,
-        _other_collaborators: Vec<String>,
+        mut other_collaborators: Vec<DocCollaborator>,
     ) -> Result<Self, Error>
     where
         R: Remote<Id = RF::Id, File = RF>,
@@ -131,14 +132,19 @@ where
         let nonce = unsafe { nonce_for_commit(&initial_commit) };
         let ciphered_commit = CipheredCommit::cipher(&initial_commit, &document_key, nonce)?;
 
-        let mut collaborators = vec![RemoteCollaborator::from_me(&me, &document_key)?];
-        for id in _other_collaborators {
-            let id = hex::decode(id)?;
-            let collab = collab_fetcher.fetch_doc_collaborator(&id).await?;
-            let collab = RemoteCollaborator::from_doc_collaborator(&collab, &document_key)?;
-
-            collaborators.push(collab);
+        // might as well cache all collaborators
+        for c in &other_collaborators {
+            s.save_doc_collaborator(c).await?;
         }
+
+        let collaborators = vec![RemoteCollaborator::from_me(&me, &document_key)]
+            .into_iter()
+            .chain(
+                other_collaborators
+                    .drain(..)
+                    .map(|c| RemoteCollaborator::from_doc_collaborator(&c, &document_key)),
+            )
+            .try_collect()?;
 
         let remote = remote.create(ciphered_commit, collaborators).await?;
         s.save_remote_head(&initial_commit.id).await?;
@@ -287,11 +293,14 @@ where
         let unverified = commit.decipher(&self.config.document_key)?;
         let author = match s.load_commit_author(&unverified.author_id).await? {
             None => {
-                let author = self.collab_fetcher.fetch_commit_author(&unverified.author_id).await?;
+                let author = self
+                    .collab_fetcher
+                    .fetch_commit_author(&unverified.author_id)
+                    .await?;
                 s.save_commit_author(&author).await?;
 
                 author
-            },
+            }
             Some(a) => a,
         };
 
@@ -441,10 +450,10 @@ impl<T: StorageExclusiveGuard + Sync> StorageExclusiveGuardExt for T where Error
 #[cfg(test)]
 mod test {
     use super::File;
+    use crate::collab_fetcher::TestCollaboratorFetcher;
     use crate::remote::DummyRemote;
     use crate::storage::test::TempDirFilesystemStorage;
     use crate::test_utils::user::*;
-    use crate::collab_fetcher::TestCollaboratorFetcher;
     use std::sync::Arc;
 
     #[tokio::test]
@@ -467,6 +476,8 @@ mod test {
         std::mem::drop(f);
 
         let collab_fetcher = TestCollaboratorFetcher::new();
-        let _f = File::from_existing(collab_fetcher, me, storage, remote).await.unwrap();
+        let _f = File::from_existing(collab_fetcher, me, storage, remote)
+            .await
+            .unwrap();
     }
 }

@@ -122,10 +122,10 @@ impl From<Status> for CollaboratorFetcherError {
 #[cfg(test)]
 mod test_impl {
     use super::{CollaboratorFetcher, CollaboratorFetcherError};
+    use crate::test_utils::certs::*;
     use openssl::x509::X509;
     use openssl_utils::PublicKeyFingerprintExt;
     use std::collections::HashMap;
-    use crate::test_utils::certs::*;
 
     pub struct TestCollaboratorFetcher {
         ca_cert: X509,
@@ -164,7 +164,8 @@ mod test_impl {
             &self,
             pubkey_fingerprint: &[u8],
         ) -> Result<X509, CollaboratorFetcherError> {
-            self.store.get(pubkey_fingerprint)
+            self.store
+                .get(pubkey_fingerprint)
                 .cloned()
                 .ok_or(CollaboratorFetcherError::NotFound)
         }
