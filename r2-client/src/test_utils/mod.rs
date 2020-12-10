@@ -60,9 +60,10 @@ pub mod user {
         )
         .unwrap();
         pub static ref COMMIT_AUTHOR_A: CommitAuthor =
-            CommitAuthor::from_certificate(CLIENT_A_SIGN_CERT.to_owned()).unwrap();
+            CommitAuthor::from_certificate(CLIENT_A_SIGN_CERT.cert.to_owned(), &*CA_CERT).unwrap();
         pub static ref DOC_COLLABORATOR_A: DocCollaborator =
-            DocCollaborator::from_certificate(CLIENT_A_AUTH_CERT.to_owned()).unwrap();
+            DocCollaborator::from_certificate(CLIENT_A_AUTH_CERT.cert.to_owned(), &*CA_CERT)
+                .unwrap();
         pub static ref ME_B: Me = Me::from_certs(
             CLIENT_B_SIGN_KEY.to_owned(),
             CLIENT_B_SIGN_CERT.to_owned(),
@@ -71,9 +72,10 @@ pub mod user {
         )
         .unwrap();
         pub static ref COMMIT_AUTHOR_B: CommitAuthor =
-            CommitAuthor::from_certificate(CLIENT_B_SIGN_CERT.to_owned()).unwrap();
+            CommitAuthor::from_certificate(CLIENT_B_SIGN_CERT.cert.to_owned(), &*CA_CERT).unwrap();
         pub static ref DOC_COLLABORATOR_B: DocCollaborator =
-            DocCollaborator::from_certificate(CLIENT_B_AUTH_CERT.to_owned()).unwrap();
+            DocCollaborator::from_certificate(CLIENT_B_AUTH_CERT.cert.to_owned(), &*CA_CERT)
+                .unwrap();
     }
 }
 

@@ -73,7 +73,17 @@ pub struct UnverifiedCommitAuthor {
 }
 
 impl DocCollaborator {
-    pub fn from_certificate(auth_certificate: ValidCertificate) -> Result<Self, CryptoErr> {
+    pub fn from_certificate(auth_certificate: X509, ca_cert: &X509) -> Result<Self, CryptoErr> {
+        let auth_certificate = auth_certificate.validate(ca_cert, &DOC_COLLABORATOR_KEY_USAGES)?;
+
+        // Safety: we did check key usages on the call to validate() ^
+        unsafe { Self::from_certificate_unchecked(auth_certificate) }
+    }
+
+    /// Assumes certificate was validated for proper key usage
+    pub unsafe fn from_certificate_unchecked(
+        auth_certificate: ValidCertificate,
+    ) -> Result<Self, CryptoErr> {
         let id = auth_certificate.pubkey_fingerprint()?;
         let name = auth_certificate.cert.common_name()?;
 
@@ -88,20 +98,29 @@ impl DocCollaborator {
 
 impl UnverifiedDocCollaborator {
     pub fn verify(self, ca_cert: &X509) -> Result<DocCollaborator, CryptoErr> {
-        let auth_certificate = X509::from_pem(&self.auth_certificate_pem)?
-            .validate(ca_cert, &DOC_COLLABORATOR_KEY_USAGES)?;
+        let auth_certificate = X509::from_pem(&self.auth_certificate_pem)?;
 
-        DocCollaborator::from_certificate(auth_certificate)
+        DocCollaborator::from_certificate(auth_certificate, ca_cert)
     }
 
     pub unsafe fn verify_unchecked(self) -> Result<DocCollaborator, CryptoErr> {
         let auth_certificate = X509::from_pem(&self.auth_certificate_pem)?.validate_unchecked();
-        DocCollaborator::from_certificate(auth_certificate)
+        DocCollaborator::from_certificate_unchecked(auth_certificate)
     }
 }
 
 impl CommitAuthor {
-    pub fn from_certificate(sign_certificate: ValidCertificate) -> Result<Self, CryptoErr> {
+    pub fn from_certificate(sign_certificate: X509, ca_cert: &X509) -> Result<Self, CryptoErr> {
+        let sign_certificate = sign_certificate.validate(ca_cert, &COMMIT_AUTHOR_KEY_USAGES)?;
+
+        // Safety: we did check key usages on the call to validate() ^
+        unsafe { Self::from_certificate_unchecked(sign_certificate) }
+    }
+
+    /// Assumes certificate was validated for proper key usage
+    pub unsafe fn from_certificate_unchecked(
+        sign_certificate: ValidCertificate,
+    ) -> Result<Self, CryptoErr> {
         let id = sign_certificate.pubkey_fingerprint()?;
         let name = sign_certificate.cert.common_name()?;
 
@@ -116,16 +135,13 @@ impl CommitAuthor {
 
 impl UnverifiedCommitAuthor {
     pub fn verify(self, ca_cert: &X509) -> Result<CommitAuthor, CryptoErr> {
-        let sign_certificate = X509::from_pem(&self.sign_certificate_pem)?
-            .validate(ca_cert, &COMMIT_AUTHOR_KEY_USAGES)?;
-
-        CommitAuthor::from_certificate(sign_certificate)
+        let sign_certificate = X509::from_pem(&self.sign_certificate_pem)?;
+        CommitAuthor::from_certificate(sign_certificate, ca_cert)
     }
 
     pub unsafe fn verify_unchecked(self) -> Result<CommitAuthor, CryptoErr> {
         let sign_certificate = X509::from_pem(&self.sign_certificate_pem)?.validate_unchecked();
-
-        CommitAuthor::from_certificate(sign_certificate)
+        CommitAuthor::from_certificate_unchecked(sign_certificate)
     }
 }
 

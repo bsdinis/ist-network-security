@@ -100,12 +100,10 @@ pub trait StorageObject: Serialize + DeserializeOwned + Send + Sync {
 #[cfg(test)]
 #[macro_use]
 pub mod test {
-    use openssl_utils::X509Ext;
-
     use super::{Storage, StorageExclusiveGuard, StorageSharedGuard};
+    use crate::model::Snapshot;
     use crate::test_utils::commit::*;
-    use crate::{model::Snapshot, CommitAuthor, DocCollaborator};
-    use openssl::x509::X509;
+    use crate::test_utils::user::*;
     use std::fmt::Debug;
     use std::mem;
 
@@ -263,11 +261,7 @@ pub mod test {
                 .try_exclusive()
                 .expect("can't lock storage (exclusive)");
 
-            let auht_cert_pem = include_bytes!("../test_utils/clientA-auth.cert.pem");
-            let auth_cert = X509::from_pem(auht_cert_pem).unwrap();
-
-            let auth_cert = unsafe { auth_cert.validate_unchecked() };
-            let doc_collaborator = DocCollaborator::from_certificate(auth_cert).unwrap();
+            let doc_collaborator = DOC_COLLABORATOR_A.to_owned();
 
             s.save_doc_collaborator(&doc_collaborator)
                 .await
@@ -306,11 +300,7 @@ pub mod test {
                 .try_exclusive()
                 .expect("can't lock storage (exclusive)");
 
-            let sign_cert_pem = include_bytes!("../test_utils/clientA-sign.cert.pem");
-            let sign_cert = X509::from_pem(sign_cert_pem).unwrap();
-
-            let sign_cert = unsafe { sign_cert.validate_unchecked() };
-            let commit_author = CommitAuthor::from_certificate(sign_cert).unwrap();
+            let commit_author = COMMIT_AUTHOR_A.to_owned();
 
             s.save_commit_author(&commit_author)
                 .await
