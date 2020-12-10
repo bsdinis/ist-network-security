@@ -783,6 +783,7 @@ dependencies = [
  "lazy_static",
  "openssl",
  "serde",
+ "thiserror",
  "x509-parser 0.9.0",
 ]
 
