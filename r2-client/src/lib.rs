@@ -163,6 +163,63 @@ where
             collab_fetcher,
         })
     }
+
+    pub async fn clone<R: Remote<Id = RF::Id, File = RF>>(
+        collab_fetcher: CF,
+        me: Arc<Me>,
+        storage: S,
+        remote: R,
+        remote_id: &RF::Id,
+    ) -> Result<Self, Error>
+    where
+        Error: From<R::Error>,
+    {
+        let mut remote = remote.open(remote_id).await?;
+        let mut s = storage.try_exclusive()?;
+
+        let remote_metadata = remote.load_metadata().await?;
+        let config = {
+            let remote_id = remote_id.to_owned();
+            let document_key = me.unseal_key(&remote_metadata.document_key)?;
+
+            RepoConfig {
+                remote_id,
+                document_key,
+            }
+        };
+        s.save(&config).await?;
+
+        let mut file = File {
+            collab_fetcher,
+            me,
+            config,
+            storage,
+            remote,
+        };
+
+        // Fetch existing commits
+        let mut commits = vec![];
+        let mut prev_commit_id = Some(remote_metadata.head.clone());
+        while let Some(id) = &prev_commit_id {
+            let commit = file.remote.load_commit(id).await?;
+            let commit = file.decipher_commit(&mut s, commit).await?;
+
+            prev_commit_id = commit.prev_commit_id.clone();
+            s.save_commit(&commit).await?;
+            commits.push(commit);
+        }
+        s.save_remote_head(&remote_metadata.head).await?;
+
+        // Apply existing commits
+        let mut snapshot = Snapshot::empty();
+        for commit in commits.iter().rev() {
+            snapshot = snapshot.apply(&commit.patch)?;
+        }
+        s.save_current_snapshot(&snapshot).await?;
+        s.save_head(&remote_metadata.head).await?;
+
+        Ok(file)
+    }
 }
 
 impl<S: Storage, RF: RemoteFile, CF: CollaboratorFetcher> File<S, RF, CF>
