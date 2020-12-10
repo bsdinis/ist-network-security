@@ -4,13 +4,12 @@ use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::str;
+use thiserror::Error;
 
 use tokio::fs;
 
 use super::{Storage, StorageExclusiveGuard, StorageObject, StorageSharedGuard};
 use crate::model::*;
-
-type Error = Box<dyn std::error::Error>; // TODO: use more specific type
 
 #[derive(Clone)]
 pub struct FilesystemStorage {
@@ -27,6 +26,21 @@ pub struct FilesystemStorageExclusiveGuard {
     file_path: PathBuf,
     root: PathBuf,
     lock_file: std::fs::File,
+}
+
+#[derive(Debug, Error)]
+pub enum FilesystemStorageError {
+    #[error("Failed to lock storage")]
+    LockFailed(#[source] std::io::Error),
+
+    #[error("Failed to parse stored data")]
+    StorageCorrupted(#[from] toml::de::Error),
+
+    #[error("Failed to serialize data to store")]
+    BadData(#[from] toml::ser::Error),
+
+    #[error("I/O Error: {:?}", .0)]
+    IOError(#[from] std::io::Error),
 }
 
 fn root_path(file_path: &PathBuf) -> PathBuf {
@@ -66,7 +80,7 @@ fn commit_author_path(root: &PathBuf, commit_author_id: &[u8]) -> PathBuf {
 }
 
 impl FilesystemStorage {
-    pub fn new(file_path: PathBuf) -> Result<Self, <Self as Storage>::Error> {
+    pub fn new(file_path: PathBuf) -> Result<Self, FilesystemStorageError> {
         let root = root_path(&file_path);
 
         std::fs::DirBuilder::new()
@@ -78,7 +92,7 @@ impl FilesystemStorage {
 }
 
 impl Storage for FilesystemStorage {
-    type Error = Error;
+    type Error = FilesystemStorageError;
     type SharedGuard = FilesystemStorageSharedGuard;
     type ExclusiveGuard = FilesystemStorageExclusiveGuard;
 
@@ -91,18 +105,19 @@ impl Storage for FilesystemStorage {
     }
 }
 
-fn lock_file(storage: &FilesystemStorage) -> Result<std::fs::File, Error> {
+fn lock_file(storage: &FilesystemStorage) -> Result<std::fs::File, std::io::Error> {
     std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .open(lockfile_path(&storage.root))
-        .map_err(|err| err.into())
 }
 
 impl FilesystemStorageSharedGuard {
-    fn new(storage: &FilesystemStorage) -> Result<Self, <Self as StorageSharedGuard>::Error> {
-        let lock_file = lock_file(storage)?;
-        lock_file.try_lock_shared()?;
+    fn new(storage: &FilesystemStorage) -> Result<Self, FilesystemStorageError> {
+        let lock_file = lock_file(storage)
+            .map_err(|e| FilesystemStorageError::LockFailed(e))?;
+        lock_file.try_lock_shared()
+            .map_err(|e| FilesystemStorageError::LockFailed(e))?;
 
         Ok(FilesystemStorageSharedGuard {
             file_path: storage.file_path.to_owned(),
@@ -113,9 +128,11 @@ impl FilesystemStorageSharedGuard {
 }
 
 impl FilesystemStorageExclusiveGuard {
-    fn new(storage: &FilesystemStorage) -> Result<Self, <Self as StorageSharedGuard>::Error> {
-        let lock_file = lock_file(storage)?;
-        lock_file.try_lock_exclusive()?;
+    fn new(storage: &FilesystemStorage) -> Result<Self, FilesystemStorageError> {
+        let lock_file = lock_file(storage)
+            .map_err(|e| FilesystemStorageError::LockFailed(e))?;
+        lock_file.try_lock_exclusive()
+            .map_err(|e| FilesystemStorageError::LockFailed(e))?;
 
         Ok(FilesystemStorageExclusiveGuard {
             file_path: storage.file_path.to_owned(),
@@ -145,7 +162,7 @@ macro_rules! impl_shared {
     ($typename:ident) => {
         #[tonic::async_trait]
         impl StorageSharedGuard for $typename {
-            type Error = Error;
+            type Error = FilesystemStorageError;
 
             async fn load_commit(&self, commit_id: &str) -> Result<Commit, Self::Error> {
                 let commit_file_path = commit_path(&self.root, commit_id);
