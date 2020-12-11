@@ -1,8 +1,8 @@
 use super::auth_utils::authenticate;
 use protos::client_api_server::ClientApi;
 use protos::*;
-use tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
+use tonic::{Request, Response, Status};
 
 pub struct ClientApiService;
 

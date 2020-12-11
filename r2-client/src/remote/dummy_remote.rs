@@ -116,7 +116,9 @@ impl RemoteFile for DummyRemoteFile {
 
         data.commits
             .get(commit_id)
-            .ok_or(CommitNotFoundError{ id: commit_id.to_owned() })
+            .ok_or(CommitNotFoundError {
+                id: commit_id.to_owned(),
+            })
             .map(|c| c.to_owned())
             .map_err(|e| e.into())
     }

@@ -155,7 +155,7 @@ impl Me {
     ) -> Result<Self, CryptoErr> {
         let sign_id = sign_private_key.pubkey_fingerprint()?;
         let auth_id = auth_private_key.pubkey_fingerprint()?;
-        
+
         let sign_certificate = sign_certificate.validate(ca_cert, &COMMIT_AUTHOR_KEY_USAGES)?;
         let auth_certificate = auth_certificate.validate(ca_cert, &DOC_COLLABORATOR_KEY_USAGES)?;
 
@@ -170,8 +170,6 @@ impl Me {
             auth_certificate.pubkey_fingerprint()?,
             "authentication private key and certificate mistach"
         );
-
-        
 
         // Ensure keys are properly used
         sign_certificate

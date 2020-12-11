@@ -225,7 +225,6 @@ async fn main() -> color_eyre::eyre::Result<()> {
     Ok(())
 }
 
-
 struct CommitStats {
     insertions: usize,
     deletions: usize,
@@ -238,7 +237,13 @@ fn commit_stats(commit: &Commit) -> CommitStats {
         .map(|h| {
             h.lines()
                 .into_iter()
-                .filter(|l| if let diffy::Line::Delete(_) = l { true } else { false })
+                .filter(|l| {
+                    if let diffy::Line::Delete(_) = l {
+                        true
+                    } else {
+                        false
+                    }
+                })
                 .count()
         })
         .fold(0, |acc, x| acc + x);
@@ -248,12 +253,21 @@ fn commit_stats(commit: &Commit) -> CommitStats {
         .map(|h| {
             h.lines()
                 .into_iter()
-                .filter(|l| if let diffy::Line::Insert(_) = l { true } else { false })
+                .filter(|l| {
+                    if let diffy::Line::Insert(_) = l {
+                        true
+                    } else {
+                        false
+                    }
+                })
                 .count()
         })
         .fold(0, |acc, x| acc + x);
 
-    CommitStats { insertions, deletions }
+    CommitStats {
+        insertions,
+        deletions,
+    }
 }
 
 async fn commit(mut file: File, message: String) -> Result<()> {
@@ -261,7 +275,10 @@ async fn commit(mut file: File, message: String) -> Result<()> {
     let stats = commit_stats(&commit);
 
     println!("[{}] {}", commit.id, commit.message);
-    println!("\t{} insertions(+), {} deletions (+)", stats.insertions, stats.deletions);
+    println!(
+        "\t{} insertions(+), {} deletions (+)",
+        stats.insertions, stats.deletions
+    );
 
     Ok(())
 }
@@ -284,22 +301,27 @@ async fn pull(mut file: File, force: bool) -> Result<()> {
     let fetched_commits = fetch(&mut file).await?;
 
     if fetched_commits.len() > 0 {
-        let stats = fetched_commits.iter()
-            .map(|c| commit_stats(c))
-            .fold(CommitStats { insertions: 0, deletions: 0 }, |acc, x| {
-                CommitStats {
-                    insertions: acc.insertions + x.insertions,
-                    deletions: acc.deletions + x.deletions,
-                }
-            });
-        
+        let stats = fetched_commits.iter().map(|c| commit_stats(c)).fold(
+            CommitStats {
+                insertions: 0,
+                deletions: 0,
+            },
+            |acc, x| CommitStats {
+                insertions: acc.insertions + x.insertions,
+                deletions: acc.deletions + x.deletions,
+            },
+        );
+
         let last = fetched_commits.first().unwrap();
         let first = fetched_commits.last().unwrap();
         println!("Updating {}..{}", first.id, last.id);
-        
+
         file.merge_from_remote(force).await?; //TODO: check if fast forwarded or forced update
-        
-        println!("\t{} insertions(+), {} deletions (+)", stats.insertions, stats.deletions);
+
+        println!(
+            "\t{} insertions(+), {} deletions (+)",
+            stats.insertions, stats.deletions
+        );
     } else {
         println!("Already up to date.")
     }

@@ -1,9 +1,9 @@
-use crate::model::{CommitAuthor, Me, PatchStr, ParsePatchError};
+use crate::model::{CommitAuthor, Me, ParsePatchError, PatchStr};
 
 use chrono::{DateTime, Utc};
-use openssl::hash::{hash, MessageDigest};
 use openssl::error::ErrorStack as OpenSSLError;
-use openssl_utils::{SignatureVerifier, Signer, CryptoErr};
+use openssl::hash::{hash, MessageDigest};
+use openssl_utils::{CryptoErr, SignatureVerifier, Signer};
 use serde::{Deserialize, Serialize};
 
 use thiserror::Error;
@@ -69,10 +69,7 @@ pub struct CommitBuilder {
 #[derive(Debug, Error)]
 pub enum CommitDomainError {
     #[error("Badly generated commit ID (expected '{expected}', got '{got}')")]
-    BadlyGeneratedId {
-        expected: String,
-        got: String,
-    },
+    BadlyGeneratedId { expected: String, got: String },
 
     #[error("Failed to generate ID: {:?}", .0)]
     IdGenerationFailed(#[source] OpenSSLError),
