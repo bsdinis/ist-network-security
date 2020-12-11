@@ -368,8 +368,11 @@ async fn diff(file: File, revision1: String, revision2: String) -> Result<()> {
     let revision2 = parse_ref(&revision2)?;
 
     let diff = file.diff(revision1, revision2).await?;
+    let patch = diff.as_patch();
 
-    println!("{}", diff);
+    let formatter = diffy::PatchFormatter::new().with_color();
+    println!("{}", formatter.fmt_patch(&patch));
+
     Ok(())
 }
 async fn reset(file: File, revision: String, hardness: Hardness) -> Result<()> {
