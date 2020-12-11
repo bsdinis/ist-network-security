@@ -177,6 +177,7 @@ impl UnverifiedCommit {
 }
 
 impl CommitBuilder {
+    /// Create a root commit (nothing before it in commit DAG)
     pub fn root_commit(message: String, patch: PatchStr) -> Self {
         let prev_commit_id = None;
         CommitBuilder {
@@ -186,6 +187,7 @@ impl CommitBuilder {
         }
     }
 
+    /// Create commit after another one
     pub fn from_commit(prev_commit: &Commit, message: String, patch: PatchStr) -> Self {
         let prev_commit_id = Some(prev_commit.id.clone());
         CommitBuilder {
@@ -195,6 +197,8 @@ impl CommitBuilder {
         }
     }
 
+    /// Create commit after another one
+    /// Safety: prev_commit_id must be a valid commit ID
     pub unsafe fn from_commit_id(
         prev_commit_id: Option<String>,
         message: String,

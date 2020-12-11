@@ -7,21 +7,34 @@ use std::convert::TryFrom;
 
 use iterutils::MapIntoExt;
 
+/// A Patch
+///
+/// Note: Always represents a valid patch for [diffy].
 #[derive(Clone, Serialize, PartialEq, Debug)]
 pub struct PatchStr(String);
 
+/// A snapshot of a file
 #[derive(Clone, PartialEq, Debug)]
 pub struct Snapshot(String);
 
 impl Snapshot {
+    /// Create a new empty file snapshot
+    ///
+    /// Useful for generating the initial commit
     pub fn empty() -> Snapshot {
         Snapshot(String::new())
     }
 
+    /// Merge 3 snapshots together (similar to diff3 algorithm)
+    ///
+    /// See [diffy::merge]
     pub fn merge3(ancestor: Self, ours: Self, theirs: Self) -> Result<Self, Self> {
         diffy::merge(&ancestor.0, &ours.0, &theirs.0).map_into()
     }
 
+    /// Get the result of applying a patch to this snapshot
+    ///
+    /// See [diffy::apply]
     pub fn apply(&self, patch: &PatchStr) -> Result<Self, ApplyError> {
         let patch = patch.as_patch();
         let patched = apply(&self.0, &patch)?;
@@ -29,13 +42,18 @@ impl Snapshot {
         Ok(Snapshot(patched))
     }
 
-    pub fn diff(&self, other: &Snapshot) -> PatchStr {
-        let patch = create_patch(self.as_ref(), other.as_ref());
+    /// Compute patch that transforms this snapshot in the other modified snapshot
+    ///
+    /// See [diffy::create_patch]
+    pub fn diff(&self, modified: &Snapshot) -> PatchStr {
+        let patch = create_patch(self.as_ref(), modified.as_ref());
         PatchStr(patch.to_string())
     }
 }
 
 impl PatchStr {
+    /// Create [PatchStr] from the string representation of the patch
+    /// Will error if the string is not a valid patch.
     pub fn from_string(s: String) -> Result<Self, ParsePatchError> {
         // validate
         if let Err(e) = Patch::from_str(&s) {
@@ -45,20 +63,25 @@ impl PatchStr {
         Ok(PatchStr(s))
     }
 
+    /// Create [PatchStr] from the string representation of the patch
+    /// Skips patch validity checks.
     /// Safety: argument must contain a valid patch
     pub unsafe fn from_str_unchecked(s: String) -> Self {
         PatchStr(s)
     }
 
+    /// Returns a byte slice of the contents of the patch's string representation
     pub fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()
     }
 
+    /// Creates a [diffy::Patch] object from this patch
     pub fn as_patch<'a>(&'a self) -> Patch<'a, str> {
         // Panic-free: PatchStr by construction contains a valid patch
         Patch::from_str(self.as_ref()).unwrap()
     }
 
+    /// Checks if the patch performs no changes
     pub fn is_empty(&self) -> bool {
         self.as_patch().hunks().is_empty()
     }
