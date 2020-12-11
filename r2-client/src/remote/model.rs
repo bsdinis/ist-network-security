@@ -54,7 +54,7 @@ impl RemoteCollaborator {
     }
 }
 
-type Error = Box<dyn std::error::Error>;
+use crate::Error;
 
 impl CipheredCommit {
     pub fn cipher(

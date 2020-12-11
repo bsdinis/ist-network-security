@@ -64,7 +64,7 @@ pub struct CommitBuilder {
 }
 
 // TODO: use more specific types everywhere
-type Error = Box<dyn std::error::Error>;
+use crate::Error;
 
 impl UnverifiedCommit {
     /// Convert to [Commit] after verification, given its author.

@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use thiserror::Error;
 
-type Error = Box<dyn std::error::Error>;
+use crate::Error;
 
 pub struct GrpcRemote {
     channel: Channel,

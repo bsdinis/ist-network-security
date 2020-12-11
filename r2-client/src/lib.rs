@@ -8,7 +8,7 @@ pub mod storage;
 #[cfg(test)]
 mod test_utils;
 
-type Error = Box<dyn std::error::Error>;
+pub type Error = Box<dyn std::error::Error>;
 
 pub use collab_fetcher::*;
 use model::*;

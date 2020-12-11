@@ -4,7 +4,8 @@ use std::fmt::{self, Display};
 
 use iterutils::MapIntoExt;
 
-type Error = Box<dyn std::error::Error>; // TODO: use more specific type
+// TODO: use more specific type
+use crate::Error;
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct PatchStr(String);

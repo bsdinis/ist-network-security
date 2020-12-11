@@ -3,6 +3,8 @@ use crate::model::Me;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
+use crate::Error;
+
 #[derive(Clone)]
 pub struct DummyRemote {
     files: Arc<Mutex<Vec<DummyRemoteFile>>>,
@@ -40,7 +42,7 @@ impl DummyRemote {
 
 #[tonic::async_trait]
 impl Remote for DummyRemote {
-    type Error = Box<dyn std::error::Error>;
+    type Error = Error;
     type File = DummyRemoteFile;
     type Id = usize;
 
@@ -88,7 +90,7 @@ impl Remote for DummyRemote {
 
 #[tonic::async_trait]
 impl RemoteFile for DummyRemoteFile {
-    type Error = Box<dyn std::error::Error>;
+    type Error = Error;
     type Id = usize;
 
     async fn load_metadata(&mut self) -> Result<FileMetadata, Self::Error> {
