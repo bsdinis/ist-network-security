@@ -456,6 +456,7 @@ where
         };
 
         unverified.verify(&author)
+            .map_err(|e| e.into())
     }
 
     async fn update_document_key(

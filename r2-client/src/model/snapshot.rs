@@ -1,13 +1,13 @@
 use diffy::{apply, create_patch, Patch};
-use serde::{Deserialize, Serialize};
+pub use diffy::{ApplyError, ParsePatchError};
+use serde::Serialize;
 use std::fmt::{self, Display};
+
+use std::convert::TryFrom;
 
 use iterutils::MapIntoExt;
 
-// TODO: use more specific type
-use crate::Error;
-
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Clone, Serialize, PartialEq, Debug)]
 pub struct PatchStr(String);
 
 #[derive(Clone, PartialEq, Debug)]
@@ -22,8 +22,8 @@ impl Snapshot {
         diffy::merge(&ancestor.0, &ours.0, &theirs.0).map_into()
     }
 
-    pub fn apply(&self, patch: &PatchStr) -> Result<Self, Error> {
-        let patch = Patch::from_str(patch.as_ref())?;
+    pub fn apply(&self, patch: &PatchStr) -> Result<Self, ApplyError> {
+        let patch = patch.as_patch();
         let patched = apply(&self.0, &patch)?;
 
         Ok(Snapshot(patched))
@@ -36,13 +36,31 @@ impl Snapshot {
 }
 
 impl PatchStr {
-    pub fn bytes(&self) -> &[u8] {
-        self.as_ref()
+    pub fn from_string(s: String) -> Result<Self, ParsePatchError> {
+        // validate
+        if let Err(e) = Patch::from_str(&s) {
+            return Err(e);
+        }
+
+        Ok(PatchStr(s))
+    }
+
+    /// Safety: argument must contain a valid patch
+    pub unsafe fn from_str_unchecked(s: String) -> Self {
+        PatchStr(s)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+
+    pub fn as_patch<'a>(&'a self) -> Patch<'a, str> {
+        // Panic-free: PatchStr by construction contains a valid patch
+        Patch::from_str(self.as_ref()).unwrap()
     }
 
     pub fn is_empty(&self) -> bool {
-        let p = Patch::from_str(self.as_ref()).unwrap();
-        p.hunks().is_empty()
+        self.as_patch().hunks().is_empty()
     }
 }
 
@@ -72,8 +90,22 @@ impl AsRef<[u8]> for Snapshot {
 
 impl Display for PatchStr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let patch = Patch::from_str(&self.0).map_err(|_| fmt::Error)?;
+        let patch = self.as_patch();
         Display::fmt(&patch, f)
+    }
+}
+
+impl TryFrom<String> for PatchStr {
+    type Error = ParsePatchError;
+
+    fn try_from(s: String) -> Result<Self, ParsePatchError> {
+        PatchStr::from_string(s)
+    }
+}
+
+impl Into<String> for PatchStr {
+    fn into(self) -> String {
+        self.0
     }
 }
 

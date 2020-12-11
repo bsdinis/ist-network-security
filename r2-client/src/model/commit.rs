@@ -1,4 +1,4 @@
-use crate::model::{CommitAuthor, Me, PatchStr};
+use crate::model::{CommitAuthor, Me, PatchStr, ParsePatchError};
 
 use chrono::{DateTime, Utc};
 use openssl::hash::{hash, MessageDigest};
@@ -54,7 +54,7 @@ pub struct UnverifiedCommit {
     pub ts: DateTime<Utc>,
     pub message: String,
 
-    pub patch: PatchStr,
+    pub patch: String,
 
     pub signature: Vec<u8>,
 }
@@ -82,11 +82,9 @@ pub enum CommitDomainError {
 
     #[error("Failed to sign commit: {:?}", .0)]
     SigningFailed(#[source] CryptoErr),
-}
 
-#[derive(Debug, Error)]
-pub enum CommitAuthoringError {
-
+    #[error("Invalid Patch: {:?}", .0)]
+    InvalidPatch(#[from] ParsePatchError),
 }
 
 impl UnverifiedCommit {
@@ -115,10 +113,21 @@ impl UnverifiedCommit {
             .validate_rsa_sig(&self.signature, &bytes, self.ts)
             .map_err(|e| CommitDomainError::InvalidSignature(e))?;
 
-        // Safety: we did check ^
-        unsafe { Ok(self.verify_unchecked()) }
+        let patch = PatchStr::from_string(self.patch)?;
+
+        Ok(Commit {
+            id: self.id,
+            prev_commit_id: self.prev_commit_id,
+            author_id: self.author_id,
+            ts: self.ts,
+            message: self.message,
+            patch,
+            signature: self.signature,
+            _priv: (),
+        })
     }
 
+    /// Safety: UnverifiedCommit must be valid (with a valid patch, signature, and ID)
     pub unsafe fn verify_unchecked(self) -> Commit {
         Commit {
             id: self.id,
@@ -126,7 +135,7 @@ impl UnverifiedCommit {
             author_id: self.author_id,
             ts: self.ts,
             message: self.message,
-            patch: self.patch,
+            patch: PatchStr::from_str_unchecked(self.patch),
             signature: self.signature,
             _priv: (),
         }
@@ -154,7 +163,7 @@ impl UnverifiedCommit {
             .chain(&self.author_id)
             .chain(self.ts.to_rfc3339().as_bytes())
             .chain(self.message.as_bytes())
-            .chain(self.patch.bytes())
+            .chain(self.patch.as_bytes())
             .cloned()
             .collect()
     }
@@ -212,7 +221,7 @@ impl CommitBuilder {
             author_id: me.commit_author_id().to_vec(),
             ts: Utc::now(),
             message: self.message,
-            patch: self.patch,
+            patch: self.patch.into(),
             signature: Vec::new(),
         };
 
@@ -236,7 +245,7 @@ impl From<Commit> for UnverifiedCommit {
             author_id: c.author_id,
             ts: c.ts,
             message: c.message,
-            patch: c.patch,
+            patch: c.patch.into(),
             signature: c.signature,
         }
     }
@@ -283,7 +292,7 @@ mod test {
         assert_eq!(ucommit0.author_id, commit0.author_id);
         assert_eq!(ucommit0.ts, commit0.ts);
         assert_eq!(ucommit0.message, commit0.message);
-        assert_eq!(ucommit0.patch, commit0.patch);
+        assert_eq!(ucommit0.patch, commit0.patch.as_ref());
         assert_eq!(ucommit0.signature, commit0.signature);
 
         let commit1 = unsafe { ucommit1.clone().verify_unchecked() };
@@ -291,7 +300,7 @@ mod test {
         assert_eq!(ucommit1.author_id, commit1.author_id);
         assert_eq!(ucommit1.ts, commit1.ts);
         assert_eq!(ucommit1.message, commit1.message);
-        assert_eq!(ucommit1.patch, commit1.patch);
+        assert_eq!(ucommit1.patch, commit1.patch.as_ref());
         assert_eq!(ucommit1.signature, commit1.signature);
     }
 
@@ -306,7 +315,7 @@ mod test {
         assert_eq!(ucommit0.author_id, commit0.author_id);
         assert_eq!(ucommit0.ts, commit0.ts);
         assert_eq!(ucommit0.message, commit0.message);
-        assert_eq!(ucommit0.patch, commit0.patch);
+        assert_eq!(ucommit0.patch, commit0.patch.as_ref());
         assert_eq!(ucommit0.signature, commit0.signature);
 
         let commit1 = ucommit1.clone().verify(&*COMMIT_AUTHOR_B).unwrap();
@@ -314,7 +323,7 @@ mod test {
         assert_eq!(ucommit1.author_id, commit1.author_id);
         assert_eq!(ucommit1.ts, commit1.ts);
         assert_eq!(ucommit1.message, commit1.message);
-        assert_eq!(ucommit1.patch, commit1.patch);
+        assert_eq!(ucommit1.patch, commit1.patch.as_ref());
         assert_eq!(ucommit1.signature, commit1.signature);
     }
 
