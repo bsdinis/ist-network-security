@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use tokio::fs;
 
+use openssl_utils::CryptoErr;
 use super::{Storage, StorageExclusiveGuard, StorageObject, StorageSharedGuard};
 use crate::model::*;
 
@@ -41,6 +42,9 @@ pub enum FilesystemStorageError {
 
     #[error("I/O Error: {:?}", .0)]
     IOError(#[from] std::io::Error),
+
+    #[error("Crypto Error: {:?}", .0)]
+    CryptoError(#[from] CryptoErr),
 }
 
 fn root_path(file_path: &PathBuf) -> PathBuf {
@@ -225,7 +229,11 @@ macro_rules! impl_shared {
 
                 let doc_collaborator: UnverifiedDocCollaborator =
                     toml::from_str(&doc_collaborator)?;
-                unsafe { Ok(Some(doc_collaborator.verify_unchecked().unwrap())) }
+
+                // Safety: we stored it verified, it's verified now
+                let doc_collaborator = unsafe { doc_collaborator.verify_unchecked() }?;
+
+                Ok(Some(doc_collaborator))
             }
 
             async fn load_commit_author(
@@ -241,7 +249,11 @@ macro_rules! impl_shared {
                     Ok(c) => c,
                 };
                 let commit_author: UnverifiedCommitAuthor = toml::from_str(&commit_author)?;
-                unsafe { Ok(Some(commit_author.verify_unchecked().unwrap())) }
+
+                // Safety: we stored it verified, it is still verified
+                let commit_author = unsafe { commit_author.verify_unchecked() }?;
+
+                Ok(Some(commit_author))
             }
 
             async fn load<O: StorageObject, ID: Sync>(&self, id: &ID) -> Result<O, Self::Error>
