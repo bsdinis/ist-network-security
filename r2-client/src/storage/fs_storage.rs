@@ -186,10 +186,15 @@ macro_rules! impl_shared {
                 &self,
                 commit_id_prefix: &str,
             ) -> Result<usize, Self::Error> {
+                use std::io::ErrorKind;
                 let commit_file_path = commit_path(&self.root, commit_id_prefix);
                 let commit_folder = commit_file_path.parent().unwrap();
 
-                let mut entries = fs::read_dir(commit_folder).await?;
+                let mut entries = match fs::read_dir(commit_folder).await {
+                    Ok(e) => e,
+                    Err(e) if e.kind() == ErrorKind::NotFound => return Ok(0),
+                    Err(e) => return Err(e.into()),
+                };
                 let mut count = 0usize;
 
                 while let Some(entry) = entries.next_entry().await? {
