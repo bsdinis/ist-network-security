@@ -118,9 +118,10 @@ impl RemoteFile for GrpcRemoteFile {
 
         let resp = self.client.get_commit(req).await?.into_inner();
 
-        resp.commit.map_try_into()?
+        resp.commit
+            .map_try_into()?
             .ok_or(GrpcRemoteError::MissingField("commit"))
-            .map_err(|e|e.into())
+            .map_err(|e| e.into())
     }
 
     async fn commit(&mut self, commit: CipheredCommit) -> Result<(), Self::Error> {
@@ -210,9 +211,15 @@ impl TryFrom<protos::Commit> for CipheredCommit {
             id: msg.commit_id,
             data: SealedSecretBox {
                 ciphertext: msg.ciphertext,
-                nonce: msg.nonce.try_into().map_err(|_| GrpcRemoteError::BadNonceSize)?,
+                nonce: msg
+                    .nonce
+                    .try_into()
+                    .map_err(|_| GrpcRemoteError::BadNonceSize)?,
                 aad: msg.aad,
-                tag: msg.tag.try_into().map_err(|_| GrpcRemoteError::BadTagSize)?,
+                tag: msg
+                    .tag
+                    .try_into()
+                    .map_err(|_| GrpcRemoteError::BadTagSize)?,
             },
         })
     }

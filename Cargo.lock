@@ -989,6 +989,7 @@ dependencies = [
 name = "r2-client"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "chrono",
  "diffy",
  "fs2",

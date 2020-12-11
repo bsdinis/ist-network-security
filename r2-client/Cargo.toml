@@ -27,6 +27,7 @@ lazy_static = "1.4.0"
 hex = "0.4.2"
 thiserror = "1.0"
 iterutils = { path = "../iterutils" }
+async-stream = "0.3"
 
 [dev-dependencies]
 tempdir = "0.3.7"

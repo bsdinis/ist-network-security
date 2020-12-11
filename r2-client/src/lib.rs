@@ -20,6 +20,9 @@ use std::borrow::Borrow;
 use std::path::PathBuf;
 use std::sync::Arc;
 use storage::*;
+use tokio::stream::Stream;
+
+use async_stream::try_stream;
 
 use iterutils::TryCollectExt;
 use std::convert::TryInto;
@@ -76,7 +79,8 @@ where
     RF::Id: Serialize + DeserializeOwned + Send + Sync,
     for<'de> RF::Id: Deserialize<'de>,
 {
-    pub async fn from_existing<R>(
+    /// Open existing file repo
+    pub async fn open<R>(
         collab_fetcher: CF,
         me: Arc<Me>,
         storage: S,
@@ -102,7 +106,8 @@ where
         })
     }
 
-    pub async fn init<R>(
+    /// Create new repo from existing file
+    pub async fn create<R>(
         collab_fetcher: CF,
         me: Arc<Me>,
         storage: S,
@@ -164,7 +169,8 @@ where
         })
     }
 
-    pub async fn clone<R: Remote<Id = RF::Id, File = RF>>(
+    /// Create local copy of existing repo in remote
+    pub async fn from_remote<R: Remote<Id = RF::Id, File = RF>>(
         collab_fetcher: CF,
         me: Arc<Me>,
         storage: S,
@@ -388,6 +394,31 @@ where
         }
     }
 
+    /// Stream all commits starting from the HEAD (most recent first)
+    pub fn log<'a>(&'a self) -> impl Stream<Item = Result<Commit, Error>> + 'a {
+        try_stream! {
+            let s = self.storage.try_shared()?;
+
+            let mut prev_id = Some(s.load_head().await?);
+            while let Some(id) = prev_id {
+                let commit = s.load_commit(&id).await?;
+
+                prev_id = commit.prev_commit_id.clone();
+                yield commit;
+            }
+        }
+    }
+
+    /// Get a commit author by ID
+    /// Will not try to fetch commit authors not yet seen.
+    pub async fn get_commit_author(&self, id: &[u8]) -> Result<CommitAuthor, Error> {
+        let s = self.storage.try_shared()?;
+        s.load_commit_author(id)
+            .await
+            .map_err(|e| e.into())
+            .and_then(|o| o.ok_or("commit author not found".into()))
+    }
+
     async fn cipher_commit(
         &self,
         storage: &S::ExclusiveGuard,
@@ -584,7 +615,7 @@ mod test {
         let collab_fetcher = TestCollaboratorFetcher::new();
 
         let storage = TempDirFilesystemStorage::new();
-        let f = File::init(
+        let f = File::create(
             collab_fetcher,
             me.clone(),
             storage.clone(),
@@ -597,7 +628,7 @@ mod test {
         std::mem::drop(f);
 
         let collab_fetcher = TestCollaboratorFetcher::new();
-        let _f = File::from_existing(collab_fetcher, me, storage, remote)
+        let _f = File::open(collab_fetcher, me, storage, remote)
             .await
             .unwrap();
     }

@@ -8,9 +8,9 @@ use thiserror::Error;
 
 use tokio::fs;
 
-use openssl_utils::CryptoErr;
 use super::{Storage, StorageExclusiveGuard, StorageObject, StorageSharedGuard};
 use crate::model::*;
+use openssl_utils::CryptoErr;
 
 #[derive(Clone)]
 pub struct FilesystemStorage {
@@ -118,9 +118,9 @@ fn lock_file(storage: &FilesystemStorage) -> Result<std::fs::File, std::io::Erro
 
 impl FilesystemStorageSharedGuard {
     fn new(storage: &FilesystemStorage) -> Result<Self, FilesystemStorageError> {
-        let lock_file = lock_file(storage)
-            .map_err(|e| FilesystemStorageError::LockFailed(e))?;
-        lock_file.try_lock_shared()
+        let lock_file = lock_file(storage).map_err(|e| FilesystemStorageError::LockFailed(e))?;
+        lock_file
+            .try_lock_shared()
             .map_err(|e| FilesystemStorageError::LockFailed(e))?;
 
         Ok(FilesystemStorageSharedGuard {
@@ -133,9 +133,9 @@ impl FilesystemStorageSharedGuard {
 
 impl FilesystemStorageExclusiveGuard {
     fn new(storage: &FilesystemStorage) -> Result<Self, FilesystemStorageError> {
-        let lock_file = lock_file(storage)
-            .map_err(|e| FilesystemStorageError::LockFailed(e))?;
-        lock_file.try_lock_exclusive()
+        let lock_file = lock_file(storage).map_err(|e| FilesystemStorageError::LockFailed(e))?;
+        lock_file
+            .try_lock_exclusive()
             .map_err(|e| FilesystemStorageError::LockFailed(e))?;
 
         Ok(FilesystemStorageExclusiveGuard {
