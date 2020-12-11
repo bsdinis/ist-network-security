@@ -27,9 +27,9 @@ use std::convert::TryInto;
 
 use openssl_utils::aead::NONCE_SIZE as AEAD_NONCE_SIZE;
 
-use eyre::Result;
-use eyre::Report as Error;
 use eyre::eyre;
+use eyre::Report as Error;
+use eyre::Result;
 
 /// A File tracked by R2
 pub struct File<S: Storage, RF: RemoteFile, CF: CollaboratorFetcher>
@@ -69,6 +69,12 @@ pub enum ResetHardness {
 
     /// Rewind HEAD, but leave current file untouched
     Soft,
+}
+
+pub struct FileLog {
+    pub commits: Vec<Commit>,
+    pub head: String,
+    pub remote_head: String,
 }
 
 impl<S: Storage, RF: RemoteFile, CF: CollaboratorFetcher> File<S, RF, CF>
@@ -312,7 +318,7 @@ where
 
     /// Fetch changes from remote
     /// Returns last received commit from remote
-    pub async fn fetch(&mut self) -> Result<Option<Commit>, Error> {
+    pub async fn fetch(&mut self) -> Result<Vec<Commit>, Error> {
         let mut s = self.storage.try_exclusive()?;
 
         let cur_remote_head = s.load_remote_head().await?;
@@ -321,7 +327,7 @@ where
         self.update_document_key(&mut s, &metadata.document_key)
             .await?;
         if cur_remote_head == metadata.head {
-            return Ok(None);
+            return Ok(vec![]);
         }
 
         let mut commits_to_fetch: Vec<Commit> = vec![];
@@ -344,7 +350,7 @@ where
             s.save_remote_head(&commit.id).await?;
         }
 
-        Ok(Some(commits_to_fetch.remove(0)))
+        Ok(commits_to_fetch)
     }
 
     /// Merge changes from remote HEAD to current state
@@ -367,7 +373,9 @@ where
         let ancestor = if commits_to_apply.last().unwrap().id != head {
             // history rewritten in remote
             if !force {
-                return Err(eyre!("History rewritten in remote. Can't merge without force"));
+                return Err(eyre!(
+                    "History rewritten in remote. Can't merge without force"
+                ));
             }
 
             Snapshot::empty()
@@ -390,25 +398,35 @@ where
         s.save_head(&remote_head).await?;
 
         if merged.is_err() {
-            Err(eyre!("Merged with conflicts. Please fix them and commit the result."))
+            Err(eyre!(
+                "Merged with conflicts. Please fix them and commit the result."
+            ))
         } else {
             Ok(())
         }
     }
 
-    /// Stream all commits starting from the HEAD (most recent first)
-    pub fn log<'a>(&'a self) -> impl Stream<Item = Result<Commit, Error>> + 'a {
-        try_stream! {
-            let s = self.storage.try_shared()?;
+    /// Get all commits starting from the HEAD (most recent first)
+    pub async fn log(&self) -> Result<FileLog, Error> {
+        let s = self.storage.try_shared()?;
 
-            let mut prev_id = Some(s.load_head().await?);
-            while let Some(id) = prev_id {
-                let commit = s.load_commit(&id).await?;
+        let mut prev_id = Some(s.load_head().await?);
+        let mut commits = Vec::new();
+        while let Some(id) = prev_id {
+            let commit = s.load_commit(&id).await?;
 
-                prev_id = commit.prev_commit_id.clone();
-                yield commit;
-            }
+            prev_id = commit.prev_commit_id.clone();
+            commits.push(commit);
         }
+
+        let head = s.load_head().await?;
+        let remote_head = s.load_remote_head().await?;
+
+        Ok(FileLog {
+            commits,
+            head,
+            remote_head,
+        })
     }
 
     /// Get a commit author by ID
@@ -435,8 +453,7 @@ where
             return Err(eyre!("Commit hash prefix collision. Try again in a bit."));
         }
 
-        CipheredCommit::cipher(commit, &self.config.document_key, nonce)
-            .map_err(|e| e.into())
+        CipheredCommit::cipher(commit, &self.config.document_key, nonce).map_err(|e| e.into())
     }
 
     async fn decipher_commit(
@@ -458,8 +475,7 @@ where
             Some(a) => a,
         };
 
-        unverified.verify(&author)
-            .map_err(|e| e.into())
+        unverified.verify(&author).map_err(|e| e.into())
     }
 
     async fn update_document_key(

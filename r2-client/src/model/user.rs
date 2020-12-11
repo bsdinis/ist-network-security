@@ -147,13 +147,17 @@ impl UnverifiedCommitAuthor {
 
 impl Me {
     pub fn from_certs(
+        ca_cert: &X509,
         sign_private_key: Rsa<Private>,
-        sign_certificate: ValidCertificate,
+        sign_certificate: X509,
         auth_private_key: Rsa<Private>,
-        auth_certificate: ValidCertificate,
+        auth_certificate: X509,
     ) -> Result<Self, CryptoErr> {
         let sign_id = sign_private_key.pubkey_fingerprint()?;
         let auth_id = auth_private_key.pubkey_fingerprint()?;
+        
+        let sign_certificate = sign_certificate.validate(ca_cert, &COMMIT_AUTHOR_KEY_USAGES)?;
+        let auth_certificate = auth_certificate.validate(ca_cert, &DOC_COLLABORATOR_KEY_USAGES)?;
 
         // Key IDs must match
         assert_eq!(
@@ -166,6 +170,18 @@ impl Me {
             auth_certificate.pubkey_fingerprint()?,
             "authentication private key and certificate mistach"
         );
+
+        
+
+        // Ensure keys are properly used
+        sign_certificate
+            .key_can(&COMMIT_AUTHOR_KEY_USAGES)
+            .and(auth_certificate.key_can(&DOC_COLLABORATOR_KEY_USAGES))?;
+
+        // Ensure keys are properly used
+        sign_certificate
+            .key_can(&COMMIT_AUTHOR_KEY_USAGES)
+            .and(auth_certificate.key_can(&DOC_COLLABORATOR_KEY_USAGES))?;
 
         // Ensure keys are properly used
         sign_certificate
