@@ -18,9 +18,6 @@ use std::borrow::Borrow;
 use std::path::PathBuf;
 use std::sync::Arc;
 use storage::*;
-use tokio::stream::Stream;
-
-use async_stream::try_stream;
 
 use iterutils::TryCollectExt;
 use std::convert::TryInto;
@@ -57,6 +54,10 @@ pub enum RichRevisionId {
     /// Revision at n commits before the current HEAD
     /// Usually represented as HEAD~n
     RelativeHead(usize),
+
+    /// Revision at n commits before the current remote HEAD
+    /// Usually represented as remote/HEAD~n
+    RelativeRemoteHead(usize),
 
     /// The current, possibly uncommitted, state
     Uncommitted,
@@ -288,6 +289,7 @@ where
                 id
             }
             RelativeHead(n) => storage.head_minus(n).await?,
+            RelativeRemoteHead(n) => storage.remote_head_minus(n).await?,
             Uncommitted => return Ok(()),
         };
 
@@ -545,6 +547,7 @@ where
             Uncommitted => return Ok(self.load_current_snapshot().await?),
             CommitId(id) => id,
             RelativeHead(n) => self.head_minus(n).await?,
+            RelativeRemoteHead(n) => self.remote_head_minus(n).await?,
         };
 
         // build snapshot from commit history
@@ -589,6 +592,20 @@ where
     /// Get commit id corresponding to a HEAD~n reference
     async fn head_minus(&self, n: usize) -> Result<String, Error> {
         let mut commit_id = self.load_head().await?;
+        for _ in 0..n {
+            commit_id = self
+                .load_commit(&commit_id)
+                .await?
+                .prev_commit_id
+                .ok_or(eyre!("Unknown revision: HEAD~{}", n))?;
+        }
+
+        Ok(commit_id)
+    }
+
+    /// Get commit id corresponding to a remote/HEAD~n reference
+    async fn remote_head_minus(&self, n: usize) -> Result<String, Error> {
+        let mut commit_id = self.load_remote_head().await?;
         for _ in 0..n {
             commit_id = self
                 .load_commit(&commit_id)
