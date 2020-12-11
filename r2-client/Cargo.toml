@@ -28,6 +28,7 @@ hex = "0.4.2"
 thiserror = "1.0"
 iterutils = { path = "../iterutils" }
 async-stream = "0.3"
+eyre = "0.6"
 
 [dev-dependencies]
 tempdir = "0.3.7"

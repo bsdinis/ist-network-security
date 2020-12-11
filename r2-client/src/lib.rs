@@ -8,8 +8,6 @@ pub mod storage;
 #[cfg(test)]
 mod test_utils;
 
-pub type Error = Box<dyn std::error::Error>;
-
 pub use collab_fetcher::*;
 use model::*;
 use openssl_utils::{AeadKey, KeyUnsealer, SealedAeadKey};
@@ -28,6 +26,10 @@ use iterutils::TryCollectExt;
 use std::convert::TryInto;
 
 use openssl_utils::aead::NONCE_SIZE as AEAD_NONCE_SIZE;
+
+use eyre::Result;
+use eyre::Report as Error;
+use eyre::eyre;
 
 /// A File tracked by R2
 pub struct File<S: Storage, RF: RemoteFile, CF: CollaboratorFetcher>
@@ -365,7 +367,7 @@ where
         let ancestor = if commits_to_apply.last().unwrap().id != head {
             // history rewritten in remote
             if !force {
-                return Err("History rewritten in remote. Can't merge without force")?;
+                return Err(eyre!("History rewritten in remote. Can't merge without force"));
             }
 
             Snapshot::empty()
@@ -388,7 +390,7 @@ where
         s.save_head(&remote_head).await?;
 
         if merged.is_err() {
-            Err("Merged with conflicts. Please fix them and commit the result.".into())
+            Err(eyre!("Merged with conflicts. Please fix them and commit the result."))
         } else {
             Ok(())
         }
@@ -416,7 +418,7 @@ where
         s.load_commit_author(id)
             .await
             .map_err(|e| e.into())
-            .and_then(|o| o.ok_or("commit author not found".into()))
+            .and_then(|o| o.ok_or(eyre!("commit author not found")))
     }
 
     async fn cipher_commit(
@@ -430,7 +432,7 @@ where
         let nonce_str = hex::encode(&nonce);
 
         if storage.count_commits_with_prefix(&nonce_str).await? > 0 {
-            return Err("Commit hash prefix collision. Try again in a bit.")?;
+            return Err(eyre!("Commit hash prefix collision. Try again in a bit."));
         }
 
         CipheredCommit::cipher(commit, &self.config.document_key, nonce)
@@ -476,8 +478,10 @@ where
 }
 
 unsafe fn nonce_for_commit(commit: &Commit) -> [u8; AEAD_NONCE_SIZE] {
-    let id_bytes = hex::decode(&commit.id).expect("Bad commit ID");
+    // Panic free: Commit objects have valid IDs by definition
+    let id_bytes = hex::decode(&commit.id).unwrap();
 
+    // Panic free: a slice &[u8; AEAD_NONCE_SIZE] always converts successfully to [u8; AEAD_NONCE_SIZE]
     id_bytes[0..AEAD_NONCE_SIZE].to_owned().try_into().unwrap()
 }
 
@@ -574,7 +578,7 @@ where
                 .load_commit(&commit_id)
                 .await?
                 .prev_commit_id
-                .ok_or(format!("Unknown revision: HEAD~{}", n))?;
+                .ok_or(eyre!("Unknown revision: HEAD~{}", n))?;
         }
 
         Ok(commit_id)
