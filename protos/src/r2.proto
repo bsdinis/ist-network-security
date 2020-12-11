@@ -144,9 +144,11 @@ service ClientApi {
 	// Vote for squashing commits
 	// to_commit_id must match the server's head
 	// Prevents other commits for a set period of time
-	rpc squash(SquashRequest) returns (SquashResponse);
+	// Will only finish when the squash proceeeds or is cancelled
+	rpc squash(SquashRequest) returns (stream SquashResponse);
 
 	// Vote for rolling back HEAD (and discarding commits ahead of it)
 	// Prevents other commits for a set period of time
-	rpc rollback(RollbackRequest) returns (RollbackRequest);
+	// Will only finish when the rollback proceeeds or is cancelled
+	rpc rollback(RollbackRequest) returns (stream RollbackRequest);
 }
