@@ -150,5 +150,5 @@ service ClientApi {
 	// Vote for rolling back HEAD (and discarding commits ahead of it)
 	// Prevents other commits for a set period of time
 	// Will only finish when the rollback proceeeds or is cancelled
-	rpc rollback(RollbackRequest) returns (stream RollbackRequest);
+	rpc rollback(RollbackRequest) returns (stream RollbackResponse);
 }

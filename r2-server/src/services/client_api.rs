@@ -2,6 +2,7 @@ use super::auth_utils::authenticate;
 use protos::client_api_server::ClientApi;
 use protos::*;
 use tonic::{Request, Response, Status};
+use tokio::sync::mpsc;
 
 pub struct ClientApiService;
 
@@ -85,10 +86,11 @@ impl ClientApi for ClientApiService {
         Err(Status::unimplemented("hold up, not yet"))
     }
 
+    type squashStream = mpsc::Receiver<Result<SquashResponse, Status>>;
     async fn squash(
         &self,
         request: Request<SquashRequest>,
-    ) -> Result<Response<SquashResponse>, Status> {
+    ) -> Result<Response<Self::squashStream>, Status> {
         let client_id = authenticate(&request).await?;
         eprintln!(
             "not implemented: you are {:x?} request was {:#?}",
@@ -97,10 +99,11 @@ impl ClientApi for ClientApiService {
         Err(Status::unimplemented("hold up, not yet"))
     }
 
+    type rollbackStream = mpsc::Receiver<Result<RollbackResponse, Status>>;
     async fn rollback(
         &self,
         request: Request<RollbackRequest>,
-    ) -> Result<Response<RollbackRequest>, Status> {
+    ) -> Result<Response<Self::rollbackStream>, Status> {
         let client_id = authenticate(&request).await?;
         eprintln!(
             "not implemented: you are {:x?} request was {:#?}",
