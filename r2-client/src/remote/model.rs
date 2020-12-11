@@ -8,6 +8,8 @@ use openssl_utils::{
     CryptoErr,
 };
 
+use thiserror::Error;
+
 pub type CollaboratorId = Vec<u8>;
 
 pub type DocumentKey = AeadKey;
@@ -54,14 +56,24 @@ impl RemoteCollaborator {
     }
 }
 
-use crate::Error;
+#[derive(Error, Debug)]
+pub enum CipheredCommitError {
+    #[error(transparent)]
+    SerializationError(#[from] toml::ser::Error),
+
+    #[error(transparent)]
+    DeserializationError(#[from] toml::de::Error),
+
+    #[error(transparent)]
+    CryptoErr(#[from] CryptoErr),
+}
 
 impl CipheredCommit {
     pub fn cipher(
         commit: &Commit,
         key: &DocumentKey,
         nonce: [u8; openssl_utils::aead::NONCE_SIZE],
-    ) -> Result<CipheredCommit, Error> {
+    ) -> Result<CipheredCommit, CipheredCommitError> {
         let id = commit.id.clone();
         let unsealed = UnsealedSecretBox {
             nonce,
@@ -75,7 +87,7 @@ impl CipheredCommit {
         })
     }
 
-    pub fn decipher(self, key: &DocumentKey) -> Result<UnverifiedCommit, Error> {
+    pub fn decipher(self, key: &DocumentKey) -> Result<UnverifiedCommit, CipheredCommitError> {
         let unsealed = key.unseal(self.data)?;
         let commit: UnverifiedCommit = toml::from_slice(&unsealed.plaintext)?;
 

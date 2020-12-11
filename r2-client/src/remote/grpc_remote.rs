@@ -13,8 +13,6 @@ use std::sync::Arc;
 
 use thiserror::Error;
 
-use crate::Error;
-
 pub struct GrpcRemote {
     channel: Channel,
 }
@@ -37,10 +35,13 @@ pub enum GrpcRemoteError {
 
     #[error("Server sent unexpected status: {:?}", .0)]
     UnexpectedStatus(#[from] Status),
+
+    #[error("Error creating remote: {:?}", .0)]
+    InitializationError(#[source] tonic::transport::Error),
 }
 
 impl GrpcRemote {
-    pub fn new(uri: Uri, me: Arc<Me>, ca_cert_pem: &[u8]) -> Result<Self, Error> {
+    pub fn new(uri: Uri, me: Arc<Me>, ca_cert_pem: &[u8]) -> Result<Self, GrpcRemoteError> {
         let tls_config = ClientTlsConfig::new()
             .identity(Identity::from_pem(
                 me.auth_certificate_pem(),
@@ -49,8 +50,9 @@ impl GrpcRemote {
             .ca_certificate(Certificate::from_pem(ca_cert_pem));
 
         let channel = Channel::builder(uri)
-            .tls_config(tls_config)?
-            .connect_lazy()?;
+            .tls_config(tls_config)
+            .and_then(|e| e.connect_lazy())
+            .map_err(|e| GrpcRemoteError::InitializationError(e))?;
 
         Ok(GrpcRemote { channel })
     }

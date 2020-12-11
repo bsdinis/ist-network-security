@@ -434,6 +434,7 @@ where
         }
 
         CipheredCommit::cipher(commit, &self.config.document_key, nonce)
+            .map_err(|e| e.into())
     }
 
     async fn decipher_commit(

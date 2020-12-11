@@ -3,7 +3,8 @@ use crate::model::Me;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
-use crate::Error;
+use std::convert::Infallible;
+use thiserror::Error;
 
 #[derive(Clone)]
 pub struct DummyRemote {
@@ -42,7 +43,7 @@ impl DummyRemote {
 
 #[tonic::async_trait]
 impl Remote for DummyRemote {
-    type Error = Error;
+    type Error = Infallible;
     type File = DummyRemoteFile;
     type Id = usize;
 
@@ -88,9 +89,15 @@ impl Remote for DummyRemote {
     }
 }
 
+#[derive(Error, Debug)]
+#[error("Commit '{id}' not found")]
+pub struct CommitNotFoundError {
+    id: String,
+}
+
 #[tonic::async_trait]
 impl RemoteFile for DummyRemoteFile {
-    type Error = Error;
+    type Error = CommitNotFoundError;
     type Id = usize;
 
     async fn load_metadata(&mut self) -> Result<FileMetadata, Self::Error> {
@@ -109,7 +116,7 @@ impl RemoteFile for DummyRemoteFile {
 
         data.commits
             .get(commit_id)
-            .ok_or(format!("commit {} not found", commit_id))
+            .ok_or(CommitNotFoundError{ id: commit_id.to_owned() })
             .map(|c| c.to_owned())
             .map_err(|e| e.into())
     }
