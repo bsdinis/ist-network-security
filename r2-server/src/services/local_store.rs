@@ -20,6 +20,7 @@ type Collaborator = (UserId, CipheredKey);
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ServerCommit {
     pub id: String,
+    pub prev_commit_id: Option<String>,
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
     pub aad: Vec<u8>,
@@ -170,7 +171,13 @@ impl Document {
                     &self.id, &commit.id
                 ),
             ));
+        } else if self.head != commit.prev_commit_id {
+            return Err(ServiceError::InvariantError(format!(
+                "[document {}] commit {} breaks DAG, head is at {:?} but prev_commit_id is '{:?}'",
+                &self.id, &commit.id, &self.head, &commit.prev_commit_id,
+            )));
         }
+
         self.head = Some(commit.id.clone());
         self.commits.insert(commit.id.clone(), commit);
         Ok(())

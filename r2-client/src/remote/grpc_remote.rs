@@ -5,7 +5,7 @@ use openssl_utils::{aead::SealedSecretBox, SealedAeadKey};
 use protos::client_api_client::ClientApiClient;
 
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
-use tonic::{Request, Status};
+use tonic::{Code as StatusCode, Request, Status};
 
 use iterutils::{MapIntoExt, MapTryIntoExt};
 use std::convert::{TryFrom, TryInto};
@@ -43,6 +43,9 @@ pub enum GrpcRemoteError {
 
     #[error("Server did not send required field {}", .0)]
     MissingField(&'static str),
+
+    #[error("Failed commit precondition. Did you forget to `pull`? {}", .0.message())]
+    FailedCommitPrecondition(Status),
 
     #[error("Server sent unexpected status: {:?}", .0)]
     UnexpectedStatus(#[from] Status),
@@ -159,9 +162,13 @@ impl RemoteFile for GrpcRemoteFile {
             view: 0,
         };
 
-        self.client.commit(req).await?;
-
-        Ok(())
+        match self.client.commit(req).await {
+            Ok(_) => Ok(()),
+            Err(s) if s.code() == StatusCode::FailedPrecondition => {
+                Err(GrpcRemoteError::FailedCommitPrecondition(s))
+            }
+            Err(s) => Err(s.into()),
+        }
     }
 
     async fn load_collaborators(&mut self) -> Result<Vec<RemoteCollaborator>, Self::Error> {
@@ -224,6 +231,7 @@ impl Into<protos::Commit> for CipheredCommit {
     fn into(self) -> protos::Commit {
         protos::Commit {
             commit_id: self.id,
+            prev_commit_id: self.prev_commit_id.unwrap_or(String::new()),
             ciphertext: self.data.ciphertext,
             nonce: self.data.nonce.into(),
             aad: self.data.aad,
@@ -236,8 +244,15 @@ impl TryFrom<protos::Commit> for CipheredCommit {
     type Error = GrpcRemoteError;
 
     fn try_from(msg: protos::Commit) -> Result<Self, Self::Error> {
+        let prev_commit_id = if msg.prev_commit_id == "" {
+            None
+        } else {
+            Some(msg.prev_commit_id)
+        };
+
         Ok(CipheredCommit {
             id: msg.commit_id,
+            prev_commit_id,
             data: SealedSecretBox {
                 ciphertext: msg.ciphertext,
                 nonce: msg

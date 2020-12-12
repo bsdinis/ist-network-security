@@ -50,10 +50,10 @@ pub mod test {
     use super::{Storage, StorageExclusiveGuard, StorageObject, StorageSharedGuard};
     use serde::{Deserialize, Serialize};
     use std::borrow::Borrow;
+    use std::collections::HashMap;
     use std::fmt::Debug;
     use std::mem;
     use std::path::PathBuf;
-    use std::collections::HashMap;
 
     pub struct StorageTester<T: Storage>(T)
     where
@@ -144,7 +144,7 @@ pub mod test {
             }
 
             let mut weird = HashMap::new();
-            weird.insert(vec![1,2,3], ());
+            weird.insert(vec![1, 2, 3], ());
             let a = X {
                 i: 42,
                 s: "asd".to_owned(),

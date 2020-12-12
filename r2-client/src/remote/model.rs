@@ -25,9 +25,10 @@ pub struct FileMetadata {
     pub document_key: CipheredDocumentKey,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CipheredCommit {
     pub id: String,
+    pub prev_commit_id: Option<String>,
     pub data: SealedSecretBox,
 }
 
@@ -75,6 +76,7 @@ impl CipheredCommit {
         nonce: [u8; openssl_utils::aead::NONCE_SIZE],
     ) -> Result<CipheredCommit, CipheredCommitError> {
         let id = commit.id.clone();
+        let prev_commit_id = commit.prev_commit_id.clone();
         let unsealed = UnsealedSecretBox {
             nonce,
             aad: vec![],
@@ -83,6 +85,7 @@ impl CipheredCommit {
 
         Ok(CipheredCommit {
             id,
+            prev_commit_id,
             data: key.seal(unsealed)?,
         })
     }
@@ -91,10 +94,11 @@ impl CipheredCommit {
         let unsealed = key.unseal(self.data)?;
         let commit: UnverifiedCommit = toml::from_slice(&unsealed.plaintext)?;
 
-        assert_eq!(
-            commit.id, self.id,
-            "ID mismatch between what you thought you were getting and what the server sent"
-        );
+        if commit.id != self.id {
+            panic!("Commit '{}' in server is actually commit '{}'. Someone goofed up, you must rollback to a known good state.", self.id, commit.id);
+        } else if commit.prev_commit_id != self.prev_commit_id {
+            panic!("Commit '{}' in server thinks its previous commit is '{:?}' when it is actually commit '{:?}'. Someone goofed up, you must rollback to a known good state.", self.id, self.prev_commit_id, commit.prev_commit_id);
+        }
 
         Ok(commit)
     }

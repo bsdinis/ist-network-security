@@ -34,7 +34,6 @@ pub enum FilesystemStorageError {
     IOError(#[from] std::io::Error),
 }
 
-
 fn lockfile_path(root: &PathBuf) -> PathBuf {
     root.join("lockfile")
 }
@@ -178,7 +177,8 @@ pub mod test {
             let dir = TempDir::new("r2fstor_test")
                 .expect("!NOT A TEST PROBLEM! failed to create ephemeral storage directory !NOT A TEST PROBLEM!");
 
-            let storage = FilesystemStorage::new(dir.path().to_path_buf()).expect("failed to create storage");
+            let storage =
+                FilesystemStorage::new(dir.path().to_path_buf()).expect("failed to create storage");
 
             TempDirFilesystemStorage(Arc::new(dir), storage)
         }

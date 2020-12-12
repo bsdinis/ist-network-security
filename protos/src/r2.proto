@@ -13,6 +13,7 @@ message Collaborator {
 
 message Commit {
 	string commit_id = 1;
+	string prev_commit_id = 6;
 	bytes ciphertext = 2;
 	bytes nonce = 3;
 	bytes aad = 4;

@@ -81,6 +81,7 @@ impl ClientApiService {
             .await
             .map(|x| Commit {
                 commit_id: x.id,
+                prev_commit_id: x.prev_commit_id.unwrap_or("".to_owned()),
                 ciphertext: x.ciphertext,
                 nonce: x.nonce,
                 aad: x.aad,
@@ -167,6 +168,7 @@ impl ClientApi for ClientApiService {
                     .into_iter()
                     .map(|y| Commit {
                         commit_id: y.id,
+                        prev_commit_id: y.prev_commit_id.unwrap_or("".to_owned()),
                         ciphertext: y.ciphertext,
                         nonce: y.nonce,
                         aad: y.aad,
@@ -196,6 +198,7 @@ impl ClientApi for ClientApiService {
                     .into_iter()
                     .map(|y| Commit {
                         commit_id: y.id,
+                        prev_commit_id: y.prev_commit_id.unwrap_or("".to_owned()),
                         ciphertext: y.ciphertext,
                         nonce: y.nonce,
                         aad: y.aad,
@@ -261,8 +264,14 @@ impl ClientApi for ClientApiService {
             .commit
             .clone()
             .expect("need a commit to commit");
+        let prev_commit_id = if req_commit.prev_commit_id == "" {
+            None
+        } else {
+            Some(req_commit.prev_commit_id)
+        };
         let commit = ServerCommit {
             id: req_commit.commit_id,
+            prev_commit_id,
             ciphertext: req_commit.ciphertext,
             nonce: req_commit.nonce,
             aad: req_commit.aad,
@@ -281,6 +290,7 @@ impl ClientApi for ClientApiService {
             ServiceError::DocumentNotFound(doc_id) => {
                 Status::not_found(format!("document {}", doc_id))
             }
+            ServiceError::InvariantError(msg) => Status::failed_precondition(msg),
             _ => Status::unimplemented(format!("unknown error for commit: {:?}", err)),
         })
         .map(|_| Response::new(CommitResponse { ts: 0, view: 0 }))
