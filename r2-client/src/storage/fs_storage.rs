@@ -290,6 +290,13 @@ impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
             .create(commit_file_path.parent().unwrap())
             .await?;
 
+        if self.count_commits_with_prefix(&commit.id).await? != 0 {
+            let existing_commit = self.load_commit(&commit.id).await?;
+            if &existing_commit != commit {
+                panic!("Tried to save commit when another (different) one already existed with the same ID: {}.\nYou found a hash collision for SHA3-256. Congrats!", &commit.id);
+            }
+        }
+
         let contents = toml::to_string(commit)?;
         fs::write(commit_file_path, contents).await?;
 
