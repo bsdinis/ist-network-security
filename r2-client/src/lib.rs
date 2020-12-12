@@ -293,13 +293,7 @@ where
         let mut storage = self.storage.try_exclusive()?;
 
         let commit_id = match rev {
-            CommitId(id) => {
-                // verify that commit id is in the current graph
-                let head = storage.load_head().await?;
-                let _ = storage.walk_back_from_commit(&head, Some(&id)).await?;
-
-                id
-            }
+            CommitId(id) => id,
             RelativeHead(n) => storage.head_minus(n).await?,
             RelativeRemoteHead(n) => storage.remote_head_minus(n).await?,
             Uncommitted => return Ok(()),
