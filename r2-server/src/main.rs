@@ -10,7 +10,7 @@ use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
 pub mod services;
 mod storage;
-use services::service::ClientApiService;
+use services::client_api::ClientApiService;
 use tracing::{event, Level};
 
 /// Tokio Rustls server example
