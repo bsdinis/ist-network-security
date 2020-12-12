@@ -1,7 +1,6 @@
 use fs2::FileExt;
 use std::borrow::Borrow;
 use std::boxed::Box;
-use std::ffi::OsString;
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -11,17 +10,14 @@ use super::{Storage, StorageExclusiveGuard, StorageObject, StorageSharedGuard};
 
 #[derive(Debug, Clone)]
 pub struct FilesystemStorage {
-    file_path: PathBuf,
     root: PathBuf,
 }
 pub struct FilesystemStorageSharedGuard {
-    file_path: PathBuf,
     root: PathBuf,
     lock_file: std::fs::File,
 }
 
 pub struct FilesystemStorageExclusiveGuard {
-    file_path: PathBuf,
     root: PathBuf,
     lock_file: std::fs::File,
 }
@@ -38,28 +34,18 @@ pub enum FilesystemStorageError {
     IOError(#[from] std::io::Error),
 }
 
-fn root_path(file_path: &PathBuf) -> PathBuf {
-    let mut file_name = OsString::new();
-    file_name.push(".");
-    file_name.push(file_path.file_name().unwrap());
-    file_name.push(".r2");
-
-    file_path.with_file_name(file_name)
-}
 
 fn lockfile_path(root: &PathBuf) -> PathBuf {
     root.join("lockfile")
 }
 
 impl FilesystemStorage {
-    pub fn new(file_path: PathBuf) -> Result<Self, FilesystemStorageError> {
-        let root = root_path(&file_path);
-
+    pub fn new(root: PathBuf) -> Result<Self, FilesystemStorageError> {
         std::fs::DirBuilder::new()
             .recursive(true) // to not error when dir already exists
             .create(&root)?;
 
-        Ok(FilesystemStorage { file_path, root })
+        Ok(FilesystemStorage { root })
     }
 }
 
@@ -92,7 +78,6 @@ impl FilesystemStorageSharedGuard {
             .map_err(|e| FilesystemStorageError::LockFailed(e))?;
 
         Ok(FilesystemStorageSharedGuard {
-            file_path: storage.file_path.to_owned(),
             root: storage.root.to_owned(),
             lock_file,
         })
@@ -107,7 +92,6 @@ impl FilesystemStorageExclusiveGuard {
             .map_err(|e| FilesystemStorageError::LockFailed(e))?;
 
         Ok(FilesystemStorageExclusiveGuard {
-            file_path: storage.file_path.to_owned(),
             root: storage.root.to_owned(),
             lock_file,
         })
@@ -167,7 +151,7 @@ impl StorageExclusiveGuard for FilesystemStorageExclusiveGuard {
 #[cfg(test)]
 pub mod test {
     use super::FilesystemStorage;
-    use crate::storage::{Storage, StorageSharedGuard};
+    use crate::storage::Storage;
     use std::sync::Arc;
     use tempdir::TempDir;
 
