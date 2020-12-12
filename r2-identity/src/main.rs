@@ -6,7 +6,7 @@ use std::fs;
 use std::io;
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
-use tonic::transport::Server;
+use tonic::transport::{Server, Certificate, ServerTlsConfig, Identity};
 
 use openssl::hash::{hash, MessageDigest};
 use openssl::x509::X509;
@@ -25,6 +25,18 @@ struct Options {
     /// bind addr
     #[argh(option, short = 'l')]
     addr: String,
+
+    /// cert file
+    #[argh(option, short = 'c')]
+    cert: PathBuf,
+
+    /// key file
+    #[argh(option, short = 'k')]
+    key: PathBuf,
+
+    /// CA cert file (for client authentication)
+    #[argh(option, short = 'a')]
+    ca_cert: PathBuf,
 }
 
 fn load_certs(options: &Options) -> HashMap<Vec<u8>, Vec<u8>> {
@@ -61,7 +73,19 @@ async fn main() -> Result<(), Error> {
         .next()
         .ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
 
+    let cert = tokio::fs::read(options.cert).await?;
+    let key = tokio::fs::read(options.key).await?;
+    let server_identity = Identity::from_pem(cert, key);
+
+    let ca_cert_file = tokio::fs::read(options.ca_cert).await?;
+    let ca_cert = Certificate::from_pem(ca_cert_file);
+
+    let tls_config = ServerTlsConfig::new()
+        .identity(server_identity)
+        .client_ca_root(ca_cert);
+
     let server = Server::builder()
+        .tls_config(tls_config)?
         .add_service(IdentityServer::new(IdentityService::new(map)))
         .serve_with_shutdown(addr, ctrl_c());
 
