@@ -43,6 +43,7 @@ struct Options {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    color_eyre::install()?;
     let options: Options = argh::from_env();
 
     let addr = options

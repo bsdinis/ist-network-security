@@ -1,3 +1,4 @@
+use eyre::{Result, WrapErr};
 use argh::FromArgs;
 use protos::identity_server::IdentityServer;
 use service::IdentityService;
@@ -12,8 +13,6 @@ use openssl::hash::{hash, MessageDigest};
 use openssl::x509::X509;
 
 mod service;
-
-type Error = Box<dyn std::error::Error>;
 
 /// Options
 #[derive(FromArgs)]
@@ -39,21 +38,25 @@ struct Options {
     ca_cert: PathBuf,
 }
 
-fn load_certs(options: &Options) -> HashMap<Vec<u8>, Vec<u8>> {
+fn load_certs(options: &Options) -> Result<HashMap<Vec<u8>, Vec<u8>>> {
     let mut map = HashMap::new();
 
     for cert_path in &options.cert_paths {
         let (pubkey_fingerprint, cert_bytes) =
-            load_cert(cert_path).expect(&format!("Failed to load certificate {:?}", cert_path));
+            load_cert(cert_path)
+                .wrap_err_with(|| format!("Failed to load certificate {:?}", cert_path))?;
 
         map.insert(pubkey_fingerprint, cert_bytes);
     }
-    map
+
+    Ok(map)
 }
 
-fn load_cert(path: &PathBuf) -> Result<(Vec<u8>, Vec<u8>), Error> {
-    let cert_bytes = fs::read(path)?;
-    let cert = X509::from_pem(&cert_bytes)?;
+fn load_cert(path: &PathBuf) -> Result<(Vec<u8>, Vec<u8>)> {
+    let cert_bytes = fs::read(path)
+        .wrap_err_with(|| format!("Failed to read certificate {:?}", path))?;
+    let cert = X509::from_pem(&cert_bytes)
+        .wrap_err_with(|| format!("Failed to parse certificate as PEM {:?}", path))?;
 
     let pubkey_bytes = cert.public_key()?.rsa()?.public_key_to_der()?;
 
@@ -63,9 +66,11 @@ fn load_cert(path: &PathBuf) -> Result<(Vec<u8>, Vec<u8>), Error> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<()> {
+    color_eyre::install()?;
     let options: Options = argh::from_env();
-    let map = load_certs(&options);
+    let map = load_certs(&options)
+        .wrap_err("Failed to load certificates into store")?;
 
     let addr = options
         .addr
@@ -73,11 +78,14 @@ async fn main() -> Result<(), Error> {
         .next()
         .ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
 
-    let cert = tokio::fs::read(options.cert).await?;
-    let key = tokio::fs::read(options.key).await?;
+    let cert = tokio::fs::read(options.cert).await
+        .wrap_err("Failed to read server certificate")?;
+    let key = tokio::fs::read(options.key).await
+        .wrap_err("Failed to read server key")?;
     let server_identity = Identity::from_pem(cert, key);
 
-    let ca_cert_file = tokio::fs::read(options.ca_cert).await?;
+    let ca_cert_file = tokio::fs::read(options.ca_cert).await
+        .wrap_err("Failed to read CA certificate")?;
     let ca_cert = Certificate::from_pem(ca_cert_file);
 
     let tls_config = ServerTlsConfig::new()
@@ -85,7 +93,8 @@ async fn main() -> Result<(), Error> {
         .client_ca_root(ca_cert);
 
     let server = Server::builder()
-        .tls_config(tls_config)?
+        .tls_config(tls_config)
+            .wrap_err("Failed to configure TLS for server")?
         .add_service(IdentityServer::new(IdentityService::new(map)))
         .serve_with_shutdown(addr, ctrl_c());
 

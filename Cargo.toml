@@ -9,3 +9,7 @@ members = [
 	"test-ca-setup",
 	"iterutils",
 ]
+
+# make color-eyre fast
+[profile.dev.package.backtrace]
+opt-level = 3

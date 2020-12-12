@@ -1248,6 +1248,8 @@ name = "r2-identity"
 version = "0.1.0"
 dependencies = [
  "argh",
+ "color-eyre",
+ "eyre",
  "openssl",
  "protos",
  "tokio",
@@ -1261,6 +1263,7 @@ version = "0.1.0"
 dependencies = [
  "argh",
  "bincode",
+ "color-eyre",
  "eyre",
  "fs2",
  "lazy_static",

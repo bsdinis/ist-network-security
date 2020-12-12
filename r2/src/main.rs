@@ -3,7 +3,7 @@ use lib::parse_ref;
 use openssl::rsa::Rsa;
 use openssl::x509::X509;
 use r2_client::model::{Commit, Me};
-use r2_client::remote::{DummyRemote, GrpcRemote, Remote};
+use r2_client::remote::{GrpcRemote, Remote};
 use r2_client::storage::FilesystemStorage;
 use r2_client::{CollaboratorFetcher, IdentityCollaboratorFetcher, ResetHardness};
 use std::path::PathBuf;
@@ -146,7 +146,7 @@ fn get_me(
 }
 
 #[tokio::main]
-async fn main() -> color_eyre::eyre::Result<()> {
+async fn main() -> Result<()> {
     color_eyre::install()?;
 
     let opt = Opt::from_args();
@@ -168,7 +168,6 @@ async fn main() -> color_eyre::eyre::Result<()> {
     let collab_fetcher = IdentityCollaboratorFetcher::new(&ca_cert, opt.identity_server_addr)?;
 
     let remote = GrpcRemote::new(uri, me.clone(), &ca_cert).expect("Couldn't create grpc remote");
-    //let remote = DummyRemote::new(me.clone());
 
     if let Command::Init {
         message,
