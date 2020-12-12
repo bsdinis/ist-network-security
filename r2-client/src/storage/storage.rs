@@ -100,15 +100,15 @@ pub trait StorageObject: Serialize + DeserializeOwned + Send + Sync {
 #[cfg(test)]
 #[macro_use]
 pub mod test {
-    use super::{Storage, StorageExclusiveGuard, StorageSharedGuard, StorageObject};
+    use super::{Storage, StorageExclusiveGuard, StorageObject, StorageSharedGuard};
     use crate::model::Snapshot;
     use crate::test_utils::commit::*;
     use crate::test_utils::user::*;
-    use serde::{Serialize, Deserialize};
+    use serde::{Deserialize, Serialize};
     use std::borrow::Borrow;
     use std::fmt::Debug;
-    use std::path::PathBuf;
     use std::mem;
+    use std::path::PathBuf;
 
     pub struct StorageTester<T: Storage>(T)
     where

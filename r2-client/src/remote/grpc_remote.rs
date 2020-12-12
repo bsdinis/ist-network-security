@@ -87,12 +87,10 @@ impl Remote for GrpcRemote {
 
         let collaborators: Vec<protos::Collaborator> = collaborators.map_into();
 
-        let initial_commit: Option<protos::Commit> = Some(initial_commit.into());
         let ts = gen_timestamp();
 
         let res = client
             .create(Request::new(protos::CreateRequest {
-                initial_commit,
                 collaborators,
                 seqno: 0, // None
                 view: 0,  // None
@@ -100,9 +98,10 @@ impl Remote for GrpcRemote {
             }))
             .await?
             .into_inner();
-
         let id = res.document_id;
-        let file = GrpcRemoteFile { id, client };
+
+        let mut file = GrpcRemoteFile { id: id, client };
+        file.commit(initial_commit).await?;
 
         Ok(file)
     }

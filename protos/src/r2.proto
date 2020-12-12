@@ -21,9 +21,6 @@ message Commit {
 }
 
 message CreateRequest {
-	// Initial commit
-	Commit initial_commit = 1;
-
 	// Collaborators
 	repeated Collaborator collaborators = 2;
 
