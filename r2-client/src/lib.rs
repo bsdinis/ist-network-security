@@ -309,20 +309,20 @@ where
         Ok(())
     }
 
-    // async fn fetch_collaborator(&self, s: &mut S::ExclusiveGuard, id: &[u8]) -> Result<DocCollaborator, Error> {
-    //     match s.load_doc_collaborator(id).await? {
-    //         None => {
-    //             let collab = self
-    //                 .collab_fetcher
-    //                 .fetch_doc_collaborator(id)
-    //                 .await?;
-    //             s.save_commit_author(&author).await?;
+    async fn fetch_collaborator(&self, s: &mut S::ExclusiveGuard, id: &[u8]) -> Result<DocCollaborator, Error> {
+        match s.load_doc_collaborator(id).await? {
+            None => {
+                let collab = self
+                    .collab_fetcher
+                    .fetch_doc_collaborator(id)
+                    .await?;
+                s.save_doc_collaborator(&collab).await?;
 
-    //             collab
-    //         }
-    //         Some(a) => a,
-    //     };
-    // }
+                Ok(collab)
+            }
+            Some(a) => Ok(a),
+        }
+    }
 
     /// Initiate or vote for a rollback
     /// Analogous to a global [`Self::reset()`]
