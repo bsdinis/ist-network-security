@@ -222,7 +222,7 @@ async fn main() -> Result<()> {
                 cancel,
             } => rollback(file, revision, hardness, cancel).await?,
             Command::Squash { revision } => squash(file, revision).await?,
-            Command::EditCollaborators { collaborators } => edit_collaborators(file, collaborators),
+            Command::EditCollaborators { collaborators } => edit_collaborators(file, collaborators).await?,
 
             Command::Init { .. } => unreachable!(),
             Command::Clone { .. } => unreachable!(),
@@ -416,6 +416,7 @@ async fn squash(file: File, revision: String) -> Result<()> {
 
 async fn edit_collaborators(file: File, collaborators: Vec<String>) -> Result<()> {
     let mut collaborators = Vec::with_capacity(collaborators.len());
+    let collab_fetcher = file.collab_fetcher();
     for id_str in collaborators {
         let id = hex::decode(&id_str)?;
 

@@ -108,6 +108,10 @@ impl RemoteFile for DummyRemoteFile {
             document_key: data.collaborators[self.current_user.doc_collaborator_id()]
                 .document_key
                 .clone(),
+            pending_rollback: None,
+            pending_squash: None,
+            squash_vote_tally: 0,
+            rollback_vote_tally: 0,
         })
     }
 

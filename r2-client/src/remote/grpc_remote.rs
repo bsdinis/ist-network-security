@@ -171,8 +171,12 @@ impl RemoteFile for GrpcRemoteFile {
     }
 
     async fn load_collaborators(&mut self) -> Result<Vec<RemoteCollaborator>, Self::Error> {
+        let ts = gen_timestamp();
         let req = protos::GetCollaboratorsRequest {
             document_id: self.id.to_owned(),
+            seqno: 0, // None
+            view: 0,  // None
+            ts,
         };
 
         let resp = self.client.get_collaborators(req).await?.into_inner();
@@ -196,10 +200,14 @@ impl RemoteFile for GrpcRemoteFile {
 
         let commits = commits.into_iter().map(|commit| commit.into()).collect();
 
+        let ts = gen_timestamp();
         let req = protos::EditCollaboratorsRequest {
             document_id: self.id.to_owned(),
             collaborators: collaborators,
             commits: commits,
+            seqno: 0, // None
+            view: 0,  // None
+            ts,
         };
 
         let _ = self.client.edit_collaborators(req).await?;

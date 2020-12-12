@@ -648,6 +648,10 @@ where
             .and_then(|o| o.ok_or(eyre!("commit author not found")))
     }
 
+    pub fn collab_fetcher(&mut self) -> &mut CF {
+        &mut self.collab_fetcher
+    }
+
     async fn cipher_commit(
         &self,
         storage: &S::ExclusiveGuard,
