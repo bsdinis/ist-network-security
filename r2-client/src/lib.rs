@@ -280,6 +280,7 @@ where
         self.remote
             .commit(self.cipher_commit(&storage, &commit).await?)
             .await?;
+        storage.save_remote_head(&commit.id).await?;
         storage.save_commit(&commit).await?;
         storage.save_head(&commit.id).await?;
 
