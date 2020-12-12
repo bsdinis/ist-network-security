@@ -204,9 +204,7 @@ async fn main() -> Result<()> {
 
         match opt.command {
             Command::Commit { message } => commit(file, message).await?,
-            Command::Fetch => {
-                fetch(&mut file).await?;
-            }
+            Command::Fetch => fetch(&mut file).await?,
             Command::Pull { force } => pull(file, force).await?,
             Command::Log => log(file).await?,
             Command::Diff {
@@ -281,7 +279,7 @@ async fn commit(mut file: File, message: String) -> Result<()> {
 
     Ok(())
 }
-async fn fetch(file: &mut File) -> Result<Vec<Commit>> {
+async fn fetch(file: &mut File) -> Result<()> {
     let fetched_commits: Vec<Commit> = file.fetch().await?;
     if fetched_commits.len() > 0 {
         let last = fetched_commits.first().unwrap();
@@ -294,13 +292,23 @@ async fn fetch(file: &mut File) -> Result<Vec<Commit>> {
         );
     }
 
-    Ok(fetched_commits)
+    Ok(())
 }
 async fn pull(mut file: File, force: bool) -> Result<()> {
-    let fetched_commits = fetch(&mut file).await?;
+    fetch(&mut file).await?;
+    let (merged_commits, is_forced, has_conflicts) = file.merge_from_remote(force).await?;
 
-    if fetched_commits.len() > 0 {
-        let stats = fetched_commits.iter().map(|c| commit_stats(c)).fold(
+    if merged_commits.len() > 0 {
+        let last = merged_commits.first().unwrap();
+        let first = merged_commits.last().unwrap();
+        println!("Updated {}..{}", first.id, last.id);
+        if is_forced {
+            println!("Forced update");
+        } else {
+            println!("Fast-forward");
+        }
+
+        let stats = merged_commits.iter().map(|c| commit_stats(c)).fold(
             CommitStats {
                 insertions: 0,
                 deletions: 0,
@@ -311,16 +319,14 @@ async fn pull(mut file: File, force: bool) -> Result<()> {
             },
         );
 
-        let last = fetched_commits.first().unwrap();
-        let first = fetched_commits.last().unwrap();
-        println!("Updating {}..{}", first.id, last.id);
-
-        file.merge_from_remote(force).await?; //TODO: check if fast forwarded or forced update
-
         println!(
             "\t{} insertions(+), {} deletions (+)",
             stats.insertions, stats.deletions
         );
+
+        if has_conflicts {
+            println!("ERROR: conflicts encountered while merging with remote. Please fix them manually and commit them.");
+        }
     } else {
         println!("Already up to date.")
     }

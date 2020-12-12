@@ -367,8 +367,10 @@ where
     }
 
     /// Merge changes from remote HEAD to current state
+    /// Returns (vec of merged commits, bool that indicates if merged was forced update, bool that
+    /// indicates merge conflicts)
     /// Only supports fast forwarding HEAD (but still performs 3-way merge to preserve uncommitted changes)
-    pub async fn merge_from_remote(&self, force: bool) -> Result<(), Error> {
+    pub async fn merge_from_remote(&self, force: bool) -> Result<(Vec<Commit>, bool, bool), Error> {
         let mut s = self.storage.try_exclusive()?;
 
         let current_state = s.load_current_snapshot().await?;
@@ -380,8 +382,10 @@ where
 
         // early exit if no commits need to be applied
         if commits_to_apply.is_empty() {
-            return Ok(());
+            return Ok((vec![], false, false));
         }
+
+        let mut is_forced_update = false;
 
         let ancestor = if commits_to_apply.last().unwrap().id != head {
             // history rewritten in remote
@@ -390,6 +394,8 @@ where
                     "History rewritten in remote. Can't merge without force"
                 ));
             }
+
+            is_forced_update = true;
 
             Snapshot::empty()
         } else {
@@ -410,13 +416,7 @@ where
         s.save_current_snapshot(merged_snapshot).await?;
         s.save_head(&remote_head).await?;
 
-        if merged.is_err() {
-            Err(eyre!(
-                "Merged with conflicts. Please fix them and commit the result."
-            ))
-        } else {
-            Ok(())
-        }
+        Ok((commits_to_apply, is_forced_update, merged.is_err()))
     }
 
     /// Get all commits starting from the HEAD (most recent first)
