@@ -1,16 +1,21 @@
 use crate::storage::StorageObject;
-use crate::storage::{FilesystemStorage, FilesystemStorageError, Storage, StorageExclusiveGuard};
+use crate::storage::{
+    FilesystemStorage, FilesystemStorageError, Storage, StorageExclusiveGuard, StorageSharedGuard,
+};
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
 use std::iter::Iterator;
 use std::path::PathBuf;
 use thiserror::Error;
+use tokio::sync::{RwLock, RwLockWriteGuard};
 use tracing::instrument;
 use uuid::Uuid;
 
 type CipheredKey = Vec<u8>;
-pub type UserId = Vec<u8>;
-pub type ServerCollaborator = (UserId, CipheredKey);
+type UserId = Vec<u8>;
+type Collaborator = (UserId, CipheredKey);
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ServerCommit {
@@ -43,7 +48,7 @@ pub enum ServiceError {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct Document {
+struct Document {
     pub id: Uuid,
     pub keys: HashMap<UserId, CipheredKey>,
     pub commits: HashMap<String, ServerCommit>,
@@ -57,7 +62,10 @@ pub struct SquashRequest {
     pub vote: bool,
     pub dropped_commits: Vec<String>,
     pub all_commits: Vec<ServerCommit>,
-    pub collaborators: Vec<ServerCollaborator>,
+    pub collaborators: Vec<Collaborator>,
+    pub seqno: u64,
+    pub view: u64,
+    pub ts: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -67,7 +75,10 @@ pub struct RollbackRequest {
     pub target_commit: String,
     pub dropped_commits: Vec<String>,
     pub all_commits: Vec<ServerCommit>,
-    pub collaborators: Vec<ServerCollaborator>,
+    pub collaborators: Vec<Collaborator>,
+    pub seqno: u64,
+    pub view: u64,
+    pub ts: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -108,7 +119,7 @@ impl StorageObject for Document {
 /// check if the owner is a collaborator
 fn assert_owner_collaborator<'a>(
     owner: &UserId,
-    mut collaborators: impl Iterator<Item = &'a ServerCollaborator>,
+    mut collaborators: impl Iterator<Item = &'a Collaborator>,
 ) -> Result<(), ServiceError> {
     collaborators
         .find(|(x, _)| x == owner)
@@ -126,7 +137,7 @@ impl Document {
     pub fn create(
         id: Uuid,
         owner: UserId,
-        collaborators: Vec<ServerCollaborator>,
+        collaborators: Vec<Collaborator>,
     ) -> Result<Self, ServiceError> {
         assert_owner_collaborator(&owner, collaborators.iter())?;
         Ok(Document {
@@ -142,7 +153,7 @@ impl Document {
     pub fn edit_collaborators(
         &mut self,
         owner: &UserId,
-        collaborators: Vec<ServerCollaborator>,
+        collaborators: Vec<Collaborator>,
     ) -> Result<(), ServiceError> {
         assert_owner_collaborator(&owner, collaborators.iter())?;
         self.keys = collaborators.into_iter().collect();
@@ -186,6 +197,152 @@ impl Document {
     #[instrument]
     pub async fn save(&self, stor: &FilesystemStorage) -> Result<(), FilesystemStorageError> {
         stor.try_exclusive()?.save(self).await
+    }
+}
+
+type MapType = HashMap<Uuid, (Document, FilesystemStorage)>;
+#[derive(Debug)]
+pub struct LocalStore {
+    documents: RwLock<MapType>,
+}
+
+lazy_static! {
+    static ref GLOBAL_DOC_LIST: PathBuf = PathBuf::from(".document_list");
+}
+
+impl LocalStore {
+    #[instrument]
+    pub async fn new() -> Result<Self, FilesystemStorageError> {
+        let mut docs = HashMap::new();
+        if let Ok(file_bytes) = fs::read(&*GLOBAL_DOC_LIST) {
+            let doc_list: Vec<Uuid> = bincode::deserialize(&file_bytes)?;
+
+            for id in doc_list {
+                let stor = FilesystemStorage::new(PathBuf::from(&id.to_simple().to_string()))?;
+                let doc = stor.try_shared()?.load(&()).await?;
+                docs.insert(id, (doc, stor));
+            }
+        }
+
+        Ok(LocalStore {
+            documents: RwLock::new(docs),
+        })
+    }
+
+    #[instrument]
+    fn save_doc_list(
+        &self,
+        guard: &mut RwLockWriteGuard<'_, MapType>,
+    ) -> Result<(), FilesystemStorageError> {
+        let keys: Vec<Uuid> = guard.keys().cloned().collect();
+        fs::write(&*GLOBAL_DOC_LIST, &bincode::serialize(&keys)?).map_err(|err| err.into())
+    }
+
+    #[instrument]
+    pub async fn create(
+        &self,
+        owner: UserId,
+        collaborators: Vec<Collaborator>,
+    ) -> Result<Uuid, ServiceError> {
+        let id = create_id();
+        let mut docs = self.documents.write().await;
+
+        let doc = Document::create(id.clone(), owner, collaborators)?;
+        let stor = FilesystemStorage::new(PathBuf::from(&id.to_simple().to_string()))?;
+
+        doc.save(&stor).await?;
+        docs.insert(id.clone(), (doc, stor));
+        self.save_doc_list(&mut docs)?;
+        Ok(id)
+    }
+
+    #[instrument]
+    pub async fn edit_collaborators(
+        &self,
+        id: &Uuid,
+        owner: &UserId,
+        collaborators: Vec<Collaborator>,
+    ) -> Result<(), ServiceError> {
+        let mut docs = self.documents.write().await;
+        let (doc, stor) = docs
+            .get_mut(id)
+            .ok_or_else(|| ServiceError::DocumentNotFound(id.clone()))?;
+
+        if !doc.has_owner(owner) {
+            return Err(ServiceError::AuthorizationError(
+                format!("{:?}", owner),
+                doc.id,
+            ));
+        }
+
+        doc.edit_collaborators(owner, collaborators)?;
+        doc.save(stor).await?;
+        Ok(())
+    }
+
+    #[instrument]
+    pub async fn get_metadata(&self, id: &Uuid, user: &UserId) -> Option<Metadata> {
+        let docs = self.documents.read().await;
+        docs.get(id).and_then(|(x, _)| {
+            x.keys
+                .get(user)
+                .map(|key| Metadata::new(x.id.clone(), x.head.clone(), key.clone()))
+        })
+    }
+
+    #[instrument]
+    pub async fn get_collaborators(&self, id: &Uuid) -> Option<Vec<Collaborator>> {
+        self.documents
+            .read()
+            .await
+            .get(id)
+            .map(|(x, _)| x.keys.clone().into_iter().collect())
+    }
+
+    #[instrument]
+    pub async fn commit(
+        &self,
+        doc_id: &Uuid,
+        user_id: &UserId,
+        commit: ServerCommit,
+    ) -> Result<(), ServiceError> {
+        let mut docs = self.documents.write().await;
+        let (doc, stor) = docs
+            .get_mut(doc_id)
+            .ok_or_else(|| ServiceError::DocumentNotFound(doc_id.clone()))?;
+
+        if !doc.has_collaborator(user_id) {
+            return Err(ServiceError::AuthorizationError(
+                format!("{:?}", user_id),
+                doc_id.clone(),
+            ));
+        }
+
+        doc.commit(commit)?;
+        doc.save(stor).await?;
+        Ok(())
+    }
+
+    #[instrument]
+    pub async fn get_commit(
+        &self,
+        doc_id: &Uuid,
+        user_id: &UserId,
+        commit_id: &str,
+    ) -> Result<ServerCommit, ServiceError> {
+        let docs = self.documents.read().await;
+        let (doc, _) = docs
+            .get(doc_id)
+            .ok_or_else(|| ServiceError::DocumentNotFound(doc_id.clone()))?;
+
+        if !doc.has_collaborator(user_id) {
+            return Err(ServiceError::AuthorizationError(
+                format!("{:?}", user_id),
+                doc_id.clone(),
+            ));
+        }
+
+        doc.get_commit(commit_id)
     }
 }
 
@@ -306,5 +463,62 @@ mod test {
                 tag: vec![]
             }
         );
+    }
+
+    #[tokio::test]
+    async fn clnt_api() {
+        let api = LocalStore::new().await.unwrap();
+        let uid = uvec(42);
+        let uid2 = uvec(43);
+        let commit = ServerCommit {
+            id: "aaaa".to_string(),
+            ciphertext: uvec(151341u64),
+            nonce: vec![],
+            aad: vec![],
+            tag: vec![],
+        };
+
+        let uuid = Uuid::new_v4();
+        assert_eq!(api.get_metadata(&uuid, &uid).await, None);
+        assert_eq!(api.get_collaborators(&uuid).await, None);
+        assert!(api.get_commit(&uuid, &uid, "abc").await.is_err(),);
+        assert!(api
+            .edit_collaborators(&uuid, &uid, vec![(uvec(42), uvec(0))])
+            .await
+            .is_err());
+        assert!(api.commit(&uuid, &uid, commit.clone()).await.is_err());
+
+        let res = api.create(uvec(42), vec![(uvec(42), uvec(0))]).await;
+        assert!(res.is_ok());
+        let doc_id = res.unwrap();
+        assert_eq!(
+            api.get_metadata(&doc_id, &uid).await,
+            Some(Metadata::new(doc_id.clone(), None, uvec(0)))
+        );
+        assert_eq!(
+            api.get_collaborators(&doc_id).await,
+            Some(vec![(uvec(42), uvec(0))])
+        );
+        assert!(api
+            .edit_collaborators(
+                &doc_id,
+                &uid2,
+                vec![(uvec(42), uvec(0)), (uvec(48), uvec(44))]
+            )
+            .await
+            .is_err());
+        assert!(api
+            .edit_collaborators(
+                &doc_id,
+                &uid,
+                vec![(uvec(42), uvec(0)), (uvec(48), uvec(44))]
+            )
+            .await
+            .is_ok());
+        assert!(api.get_commit(&doc_id, &uid, "abc").await.is_err());
+        assert!(api.commit(&doc_id, &uid, commit.clone()).await.is_ok());
+        assert!(api.commit(&doc_id, &uid2, commit.clone()).await.is_err(),);
+        assert!(api.commit(&doc_id, &uid, commit.clone()).await.is_err(),);
+        assert!(api.get_commit(&doc_id, &uid2, "aaaa").await.is_err());
     }
 }

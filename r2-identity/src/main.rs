@@ -6,7 +6,7 @@ use std::fs;
 use std::io;
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
-use tonic::transport::{Server, Certificate, ServerTlsConfig, Identity};
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
 use openssl::hash::{hash, MessageDigest};
 use openssl::x509::X509;

@@ -1,18 +1,10 @@
 use super::auth_utils::authenticate;
 
-use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
-
-use crate::services::service::{
-    create_id, Document, Metadata, ServerCollaborator, ServerCommit, ServiceError, UserId,
-};
-use crate::storage::{FilesystemStorage, FilesystemStorageError, Storage, StorageSharedGuard};
-
-use lazy_static::lazy_static;
+use crate::services::local_store::{LocalStore, Metadata, ServerCommit, ServiceError};
+use crate::storage::FilesystemStorageError;
 use protos::client_api_server::ClientApi;
 use protos::*;
-use tokio::sync::{mpsc, RwLock, RwLockWriteGuard};
+use tokio::sync::mpsc;
 use tonic::{Request, Response, Status};
 use tracing::instrument;
 use uuid::Uuid;
@@ -23,148 +15,101 @@ fn convert_to_uuid(s: &str) -> Result<Uuid, Status> {
     })
 }
 
-type MapType = HashMap<Uuid, (Document, FilesystemStorage)>;
 #[derive(Debug)]
 pub struct ClientApiService {
-    documents: RwLock<MapType>,
-}
-
-lazy_static! {
-    static ref GLOBAL_DOC_LIST: PathBuf = PathBuf::from(".document_list");
+    store: LocalStore,
 }
 
 impl ClientApiService {
-    pub async fn new() -> Result<Self, FilesystemStorageError> {
-        let mut docs = HashMap::new();
-        if let Ok(file_bytes) = fs::read(&*GLOBAL_DOC_LIST) {
-            let doc_list: Vec<Uuid> = bincode::deserialize(&file_bytes)?;
-
-            for id in doc_list {
-                let stor = FilesystemStorage::new(PathBuf::from(&id.to_simple().to_string()))?;
-                let doc = stor.try_shared()?.load(&()).await?;
-                docs.insert(id, (doc, stor));
-            }
-        }
-
-        Ok(ClientApiService {
-            documents: RwLock::new(docs),
-        })
-    }
-
     #[instrument]
-    fn save_doc_list(
-        &self,
-        guard: &mut RwLockWriteGuard<'_, MapType>,
-    ) -> Result<(), FilesystemStorageError> {
-        let keys: Vec<Uuid> = guard.keys().cloned().collect();
-        fs::write(&*GLOBAL_DOC_LIST, &bincode::serialize(&keys)?).map_err(|err| err.into())
+    pub async fn new() -> Result<Self, FilesystemStorageError> {
+        Ok(ClientApiService {
+            store: LocalStore::new().await?,
+        })
     }
 
     #[instrument]
     pub async fn create(
         &self,
-        owner: UserId,
-        collaborators: Vec<ServerCollaborator>,
+        owner: Vec<u8>,
+        collaborators: &Vec<Collaborator>,
     ) -> Result<Uuid, ServiceError> {
-        let id = create_id();
-        let mut docs = self.documents.write().await;
-
-        let doc = Document::create(id.clone(), owner, collaborators)?;
-        let stor = FilesystemStorage::new(PathBuf::from(&id.to_simple().to_string()))?;
-
-        doc.save(&stor).await?;
-        docs.insert(id.clone(), (doc, stor));
-        self.save_doc_list(&mut docs)?;
-        Ok(id)
+        self.store
+            .create(
+                owner,
+                collaborators
+                    .iter()
+                    .map(|x| (x.auth_fingerprint.clone(), x.ciphered_document_key.clone()))
+                    .collect(),
+            )
+            .await
     }
 
     #[instrument]
     pub async fn edit_collaborators(
         &self,
         id: &Uuid,
-        owner: &UserId,
-        collaborators: Vec<ServerCollaborator>,
+        owner: &Vec<u8>,
+        collaborators: &Vec<Collaborator>,
     ) -> Result<(), ServiceError> {
-        let mut docs = self.documents.write().await;
-        let (doc, stor) = docs
-            .get_mut(id)
-            .ok_or_else(|| ServiceError::DocumentNotFound(id.clone()))?;
-
-        if !doc.has_owner(owner) {
-            return Err(ServiceError::AuthorizationError(
-                format!("{:?}", owner),
-                doc.id,
-            ));
-        }
-
-        doc.edit_collaborators(owner, collaborators)?;
-        doc.save(stor).await?;
-        Ok(())
-    }
-
-    #[instrument]
-    pub async fn get_metadata(&self, id: &Uuid, user: &UserId) -> Option<Metadata> {
-        let docs = self.documents.read().await;
-        docs.get(id).and_then(|(x, _)| {
-            x.keys
-                .get(user)
-                .map(|key| Metadata::new(x.id.clone(), x.head.clone(), key.clone()))
-        })
-    }
-
-    #[instrument]
-    pub async fn get_collaborators(&self, id: &Uuid) -> Option<Vec<ServerCollaborator>> {
-        self.documents
-            .read()
+        self.store
+            .edit_collaborators(
+                id,
+                owner,
+                collaborators
+                    .iter()
+                    .map(|x| (x.auth_fingerprint.clone(), x.ciphered_document_key.clone()))
+                    .collect(),
+            )
             .await
-            .get(id)
-            .map(|(x, _)| x.keys.clone().into_iter().collect())
+    }
+
+    #[instrument]
+    pub async fn get_metadata(&self, id: &Uuid, user: &Vec<u8>) -> Option<Metadata> {
+        self.store.get_metadata(id, user).await
+    }
+
+    #[instrument]
+    pub async fn get_commit(
+        &self,
+        id: &Uuid,
+        user: &Vec<u8>,
+        commit_id: &str,
+    ) -> Result<Commit, ServiceError> {
+        self.store
+            .get_commit(id, user, commit_id)
+            .await
+            .map(|x| Commit {
+                commit_id: x.id,
+                ciphertext: x.ciphertext,
+                nonce: x.nonce,
+                aad: x.aad,
+                tag: x.tag,
+            })
+    }
+
+    #[instrument]
+    pub async fn get_collaborators(&self, id: &Uuid) -> Option<Vec<Collaborator>> {
+        let collabs: Option<Vec<(Vec<u8>, Vec<u8>)>> = self.store.get_collaborators(id).await;
+        collabs.map(|collabs| {
+            collabs
+                .into_iter()
+                .map(|(x, y)| Collaborator {
+                    auth_fingerprint: x,
+                    ciphered_document_key: y,
+                })
+                .collect()
+        })
     }
 
     #[instrument]
     pub async fn commit(
         &self,
         doc_id: &Uuid,
-        user_id: &UserId,
+        user_id: &Vec<u8>,
         commit: ServerCommit,
     ) -> Result<(), ServiceError> {
-        let mut docs = self.documents.write().await;
-        let (doc, stor) = docs
-            .get_mut(doc_id)
-            .ok_or_else(|| ServiceError::DocumentNotFound(doc_id.clone()))?;
-
-        if !doc.has_collaborator(user_id) {
-            return Err(ServiceError::AuthorizationError(
-                format!("{:?}", user_id),
-                doc_id.clone(),
-            ));
-        }
-
-        doc.commit(commit)?;
-        doc.save(stor).await?;
-        Ok(())
-    }
-
-    #[instrument]
-    pub async fn get_commit(
-        &self,
-        doc_id: &Uuid,
-        user_id: &UserId,
-        commit_id: &str,
-    ) -> Result<ServerCommit, ServiceError> {
-        let docs = self.documents.read().await;
-        let (doc, _) = docs
-            .get(doc_id)
-            .ok_or_else(|| ServiceError::DocumentNotFound(doc_id.clone()))?;
-
-        if !doc.has_collaborator(user_id) {
-            return Err(ServiceError::AuthorizationError(
-                format!("{:?}", user_id),
-                doc_id.clone(),
-            ));
-        }
-
-        doc.get_commit(commit_id)
+        self.store.commit(doc_id, user_id, commit).await
     }
 }
 
@@ -177,19 +122,13 @@ impl ClientApi for ClientApiService {
     ) -> Result<Response<CreateResponse>, Status> {
         let client_id = authenticate(&request).await?;
         let doc_id = self
-            .create(
-                client_id,
-                request
-                    .get_ref()
-                    .collaborators
-                    .iter()
-                    .map(|x| (x.auth_fingerprint.clone(), x.ciphered_document_key.clone()))
-                    .collect(),
-            )
+            .create(client_id, &request.get_ref().collaborators)
             .await
             .map_err(|err| Status::invalid_argument(format!("error: {:?}", err)))?;
         Ok(Response::new(CreateResponse {
             document_id: doc_id.to_simple().to_string(),
+            ts: 0,
+            view: 0,
         }))
     }
 
@@ -220,6 +159,9 @@ impl ClientApi for ClientApiService {
                 document_id: x.document_id,
                 vote: x.vote,
                 dropped_commit_ids: x.dropped_commits, // TODO fix
+                seqno: x.seqno,
+                view: x.view,
+                ts: x.ts,
                 all_commits: x
                     .all_commits
                     .into_iter()
@@ -244,6 +186,9 @@ impl ClientApi for ClientApiService {
             pending_rollback: metadata.pending_rollback.map(|x| RollbackRequest {
                 document_id: x.document_id,
                 vote: x.vote,
+                seqno: x.seqno,
+                view: x.view,
+                ts: x.ts,
                 dropped_commit_ids: x.dropped_commits, // TODO fix
                 target_commit_id: format!("{:?}", x.target_commit),
                 all_commits: x
@@ -267,6 +212,8 @@ impl ClientApi for ClientApiService {
                     .collect(),
             }),
             rollback_vote_tally: metadata.rollback_vote_tally.unwrap_or(-1),
+            ts: 0,
+            view: 0,
         }))
     }
 
@@ -282,15 +229,11 @@ impl ClientApi for ClientApiService {
             &request.get_ref().commit_id,
         )
         .await
-        .map(|x| {
+        .map(|commit| {
             Response::new(GetCommitResponse {
-                commit: Some(Commit {
-                    commit_id: x.id,
-                    ciphertext: x.ciphertext,
-                    nonce: x.nonce,
-                    aad: x.aad,
-                    tag: x.tag,
-                }),
+                commit: Some(commit),
+                ts: 0,
+                view: 0,
             })
         })
         .map_err(|err| match err {
@@ -340,7 +283,7 @@ impl ClientApi for ClientApiService {
             }
             _ => Status::unimplemented(format!("unknown error for commit: {:?}", err)),
         })
-        .map(|_| Response::new(CommitResponse {}))
+        .map(|_| Response::new(CommitResponse { ts: 0, view: 0 }))
     }
 
     #[instrument]
@@ -352,12 +295,7 @@ impl ClientApi for ClientApiService {
         self.edit_collaborators(
             &convert_to_uuid(&request.get_ref().document_id)?,
             &client_id,
-            request
-                .get_ref()
-                .collaborators
-                .iter()
-                .map(|c| (c.auth_fingerprint.clone(), c.ciphered_document_key.clone()))
-                .collect(),
+            &request.get_ref().collaborators,
         )
         .await
         .map_err(|err| match err {
@@ -369,7 +307,7 @@ impl ClientApi for ClientApiService {
             }
             _ => Status::unimplemented(format!("unknown error for commit: {:?}", err)),
         })
-        .map(|_| Response::new(EditCollaboratorsResponse {}))
+        .map(|_| Response::new(EditCollaboratorsResponse { ts: 0, view: 0 }))
     }
 
     #[instrument]
@@ -380,16 +318,13 @@ impl ClientApi for ClientApiService {
         let doc_id = &convert_to_uuid(&request.get_ref().document_id)?;
         self.get_collaborators(doc_id)
             .await
-            .ok_or_else(|| Status::not_found(format!("document {}", doc_id)))
+            .ok_or_else(|| Status::not_found(format!("document {}", &doc_id)))
             .map(|collabs| {
                 Response::new(GetCollaboratorsResponse {
-                    collaborators: collabs
-                        .into_iter()
-                        .map(|(x, y)| Collaborator {
-                            auth_fingerprint: x,
-                            ciphered_document_key: y,
-                        })
-                        .collect(),
+                    document_id: doc_id.to_simple().to_string(),
+                    view: 0,
+                    ts: 0,
+                    collaborators: collabs,
                 })
             })
     }
@@ -421,70 +356,78 @@ impl ClientApi for ClientApiService {
         );
         Err(Status::unimplemented("hold up, not yet"))
     }
-}
 
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    fn uvec(id: u64) -> Vec<u8> {
-        id.to_be_bytes().iter().cloned().collect()
+    #[instrument]
+    async fn get_create_response(
+        &self,
+        request: Request<GetRequestReply>,
+    ) -> Result<Response<CreateResponse>, Status> {
+        let client_id = authenticate(&request).await?;
+        Err(Status::unimplemented("TODO"))
     }
 
-    #[tokio::test]
-    async fn clnt_api() {
-        let api = ClientApiService::new().await.unwrap();
-        let uid = uvec(42);
-        let uid2 = uvec(43);
-        let commit = ServerCommit {
-            id: "aaaa".to_string(),
-            ciphertext: uvec(151341u64),
-            nonce: vec![],
-            aad: vec![],
-            tag: vec![],
-        };
+    #[instrument]
+    async fn get_get_metadata_response(
+        &self,
+        request: Request<GetRequestReply>,
+    ) -> Result<Response<GetMetadataResponse>, Status> {
+        let client_id = authenticate(&request).await?;
+        Err(Status::unimplemented("TODO"))
+    }
 
-        let uuid = Uuid::new_v4();
-        assert_eq!(api.get_metadata(&uuid, &uid).await, None);
-        assert_eq!(api.get_collaborators(&uuid).await, None);
-        assert!(api.get_commit(&uuid, &uid, "abc").await.is_err(),);
-        assert!(api
-            .edit_collaborators(&uuid, &uid, vec![(uvec(42), uvec(0))])
-            .await
-            .is_err());
-        assert!(api.commit(&uuid, &uid, commit.clone()).await.is_err());
+    #[instrument]
+    async fn get_get_commit_response(
+        &self,
+        request: Request<GetRequestReply>,
+    ) -> Result<Response<GetCommitResponse>, Status> {
+        let client_id = authenticate(&request).await?;
+        Err(Status::unimplemented("TODO"))
+    }
 
-        let res = api.create(uvec(42), vec![(uvec(42), uvec(0))]).await;
-        assert!(res.is_ok());
-        let doc_id = res.unwrap();
-        assert_eq!(
-            api.get_metadata(&doc_id, &uid).await,
-            Some(Metadata::new(doc_id.clone(), None, uvec(0)))
-        );
-        assert_eq!(
-            api.get_collaborators(&doc_id).await,
-            Some(vec![(uvec(42), uvec(0))])
-        );
-        assert!(api
-            .edit_collaborators(
-                &doc_id,
-                &uid2,
-                vec![(uvec(42), uvec(0)), (uvec(48), uvec(44))]
-            )
-            .await
-            .is_err());
-        assert!(api
-            .edit_collaborators(
-                &doc_id,
-                &uid,
-                vec![(uvec(42), uvec(0)), (uvec(48), uvec(44))]
-            )
-            .await
-            .is_ok());
-        assert!(api.get_commit(&doc_id, &uid, "abc").await.is_err());
-        assert!(api.commit(&doc_id, &uid, commit.clone()).await.is_ok());
-        assert!(api.commit(&doc_id, &uid2, commit.clone()).await.is_err(),);
-        assert!(api.commit(&doc_id, &uid, commit.clone()).await.is_err(),);
-        assert!(api.get_commit(&doc_id, &uid2, "aaaa").await.is_err());
+    #[instrument]
+    async fn get_commit_response(
+        &self,
+        request: Request<GetRequestReply>,
+    ) -> Result<Response<CommitResponse>, Status> {
+        let client_id = authenticate(&request).await?;
+        Err(Status::unimplemented("TODO"))
+    }
+
+    #[instrument]
+    async fn get_edit_collaborators_response(
+        &self,
+        request: Request<GetRequestReply>,
+    ) -> Result<Response<EditCollaboratorsResponse>, Status> {
+        let client_id = authenticate(&request).await?;
+        Err(Status::unimplemented("TODO"))
+    }
+
+    #[instrument]
+    async fn get_get_collaborators_response(
+        &self,
+        request: Request<GetRequestReply>,
+    ) -> Result<Response<GetCollaboratorsResponse>, Status> {
+        let client_id = authenticate(&request).await?;
+        Err(Status::unimplemented("TODO"))
+    }
+
+    type get_squash_responseStream = mpsc::Receiver<Result<SquashResponse, Status>>;
+    #[instrument]
+    async fn get_squash_response(
+        &self,
+        request: Request<GetRequestReply>,
+    ) -> Result<Response<Self::get_squash_responseStream>, Status> {
+        let client_id = authenticate(&request).await?;
+        Err(Status::unimplemented("TODO"))
+    }
+
+    type get_rollback_responseStream = mpsc::Receiver<Result<RollbackResponse, Status>>;
+    #[instrument]
+    async fn get_rollback_response(
+        &self,
+        request: Request<GetRequestReply>,
+    ) -> Result<Response<Self::get_rollback_responseStream>, Status> {
+        let client_id = authenticate(&request).await?;
+        Err(Status::unimplemented("TODO"))
     }
 }

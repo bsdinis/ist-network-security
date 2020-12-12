@@ -31,6 +31,14 @@ struct Options {
     /// CA cert file (for client authentication)
     #[argh(option, short = 'a')]
     ca_cert: PathBuf,
+
+    /// replica id
+    #[argh(option, short = 'i')]
+    replica_id: u64,
+
+    /// peers id
+    #[argh(option, short = 'p')]
+    peers: Vec<String>,
 }
 
 #[tokio::main]
