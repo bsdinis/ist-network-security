@@ -40,10 +40,10 @@ pub struct Squash {
 pub struct FileMetadata {
     pub head: String,
     pub document_key: CipheredDocumentKey,
-    //pub pending_squash: Option<Squash>,
-    //pub squash_vote_tally: i64,
-    //pub pending_rollback: Option<Rollback>,
-    //pub rollback_vote_tally: i64,
+    pub pending_squash: Option<Squash>,
+    pub squash_vote_tally: i64,
+    pub pending_rollback: Option<Rollback>,
+    pub rollback_vote_tally: i64,
 }
 
 #[derive(Debug, Clone)]

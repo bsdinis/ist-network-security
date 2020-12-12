@@ -7,7 +7,7 @@ use protos::client_api_client::ClientApiClient;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
 use tonic::{Code as StatusCode, Request, Status};
 
-use iterutils::{MapIntoExt, MapTryIntoExt};
+use iterutils::{MapIntoExt, MapTryIntoExt, TryCollectExt};
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 
@@ -130,7 +130,7 @@ impl RemoteFile for GrpcRemoteFile {
 
         let resp = self.client.get_metadata(req).await?.into_inner();
 
-        Ok(resp.into())
+        Ok(resp.try_into()?)
     }
 
     async fn load_commit(&mut self, commit_id: &str) -> Result<CipheredCommit, Self::Error> {
@@ -301,78 +301,60 @@ impl TryFrom<protos::Commit> for CipheredCommit {
     }
 }
 
-impl From<protos::GetMetadataResponse> for FileMetadata {
-    fn from(msg: protos::GetMetadataResponse) -> Self {
-        FileMetadata {
+impl TryFrom<protos::GetMetadataResponse> for FileMetadata {
+    type Error = GrpcRemoteError;
+
+    fn try_from(msg: protos::GetMetadataResponse) -> Result<Self, Self::Error> {
+        let pending_squash = match msg.pending_squash {
+            Some(squash) if !squash.dropped_commit_ids.is_empty() => Some(Squash {
+                document_id: squash.document_id,
+                vote: if squash.vote {
+                    Vote::For
+                } else {
+                    Vote::Against
+                },
+                dropped_commit_ids: squash.dropped_commit_ids,
+                all_commits: squash.all_commits.into_iter()
+                    .map(|x| x.try_into())
+                    .try_collect()?,
+                collaborators: squash
+                    .collaborators
+                    .into_iter()
+                    .map(|remote_collaborator| remote_collaborator.into())
+                    .collect(),
+            }),
+            _ => None,
+        };
+
+        let pending_rollback = match msg.pending_rollback {
+            Some(rollback) if !rollback.dropped_commit_ids.is_empty() => Some(Rollback {
+                document_id: rollback.document_id,
+                vote: if rollback.vote {
+                    Vote::For
+                } else {
+                    Vote::Against
+                },
+                target_commit_id: rollback.target_commit_id,
+                dropped_commit_ids: rollback.dropped_commit_ids,
+                all_commits: rollback.all_commits.into_iter()
+                    .map(|x| x.try_into())
+                    .try_collect()?,
+                collaborators: rollback
+                    .collaborators
+                    .into_iter()
+                    .map(|x| x.into())
+                    .collect(),
+            }),
+            _ => None,
+        };
+
+        Ok(FileMetadata {
             head: msg.head,
             document_key: SealedAeadKey(msg.ciphered_document_key),
-        }
+            pending_squash,
+            squash_vote_tally: msg.squash_vote_tally.into(),
+            pending_rollback,
+            rollback_vote_tally: msg.rollback_vote_tally.into(),
+        })
     }
 }
-
-//     impl TryFrom<protos::GetMetadataResponse> for FileMetadata {
-//         type Error = GrpcRemoteError;
-
-//         fn try_from(msg: protos::GetMetadataResponse) -> Result<Self, Self::Error> {
-//             Ok(FileMetadata {
-//                 head: msg.head,
-//                 document_key: SealedAeadKey(msg.ciphered_document_key),
-//                 pending_squash: {
-//                     match msg.pending_squash {
-//                         Some(squash) => Some(Squash {
-//                             document_id: squash.document_id,
-//                             vote: if squash.vote {
-//                                 Vote::For
-//                             } else {
-//                                 Vote::Against
-//                             },
-//                             dropped_commit_ids: squash.dropped_commit_ids,
-//                             all_commits: {
-//                                 let commits = Vec::new();
-//                                 for commit in squash.all_commits {
-//                                     let commit = commit.try_into()?;
-//                                     commits.push(commit);
-//                                 }
-//                                 commits
-//                             },
-//                             collaborators: squash
-//                                 .collaborators
-//                                 .into_iter()
-//                                 .map(|remote_collaborator| remote_collaborator.into())
-//                                 .collect(),
-//                         }),
-//                         None => None,
-//                     }
-//                 },
-//                 squash_vote_tally: msg.squash_vote_tally.into(),
-//                 pending_rollback: {
-//                     match msg.pending_rollback {
-//                         Some(rollback) => Some(Rollback {
-//                             document_id: rollback.document_id,
-//                             vote: if rollback.vote {
-//                                 Vote::For
-//                             } else {
-//                                 Vote::Against
-//                             },
-//                             target_commit_id: rollback.target_commit_id,
-//                             dropped_commit_ids: rollback.dropped_commit_ids,
-//                             all_commits: {
-//                                 let commits = Vec::new();
-//                                 for commit in rollback.all_commits {
-//                                     let commit = commit.try_into()?;
-//                                     commits.push(commit);
-//                                 }
-//                                 commits
-//                             },
-//                             collaborators: rollback
-//                                 .collaborators
-//                                 .into_iter()
-//                                 .map(|remote_collaborator| remote_collaborator.into())
-//                                 .collect(),
-//                         }),
-//                         None => None,
-//                     }
-//                 },
-//                 rollback_vote_tally: msg.rollback_vote_tally.into(),
-//             })
-// }
