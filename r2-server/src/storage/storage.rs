@@ -47,9 +47,13 @@ pub trait StorageObject: Serialize + DeserializeOwned + Send + Sync {
 #[cfg(test)]
 #[macro_use]
 pub mod test {
-    use super::{Storage, StorageExclusiveGuard, StorageSharedGuard};
+    use super::{Storage, StorageExclusiveGuard, StorageObject, StorageSharedGuard};
+    use serde::{Deserialize, Serialize};
+    use std::borrow::Borrow;
     use std::fmt::Debug;
     use std::mem;
+    use std::path::PathBuf;
+    use std::collections::HashMap;
 
     pub struct StorageTester<T: Storage>(T)
     where
@@ -112,6 +116,45 @@ pub mod test {
                 .try_shared()
                 .expect("can't lock storage (exclusive) after exiting exclusive lock");
         }
+
+        pub async fn save_load(&self) {
+            let mut s = self.0.try_exclusive().unwrap();
+
+            #[derive(Debug, Serialize, Deserialize, PartialEq)]
+            struct X {
+                i: i32,
+                s: String,
+
+                // server needs this stuff to work (non string keys in maps)
+                weird: HashMap<Vec<u8>, ()>,
+            }
+            impl StorageObject for X {
+                type Id = ();
+                fn save_path(&self, root: &PathBuf) -> PathBuf {
+                    assert_eq!(42, self.i, "self got mangled");
+                    assert_eq!("asd", self.s, "self got mangled");
+                    root.join("x")
+                }
+                fn load_path<ID>(root: &PathBuf, _id: &ID) -> PathBuf
+                where
+                    Self::Id: Borrow<ID>,
+                {
+                    root.join("x")
+                }
+            }
+
+            let mut weird = HashMap::new();
+            weird.insert(vec![1,2,3], ());
+            let a = X {
+                i: 42,
+                s: "asd".to_owned(),
+                weird,
+            };
+            s.save(&a).await.expect("can't save object");
+
+            let b: X = s.load(&()).await.expect("can't save object");
+            assert_eq!(a, b, "storage mangled object");
+        }
     }
 
     /*
@@ -139,14 +182,10 @@ pub mod test {
                     tester.locks();
                 }
 
-                macro_rules! test_async_method {
-                    ($test_name:ident) => {
-                        #[tokio::test]
-                        async fn $test_name() {
-                            let tester = StorageTester::new($ephemeral_storage_builder());
-                            tester.$test_name().await;
-                        }
-                    };
+                #[tokio::test]
+                async fn save_load() {
+                    let tester = StorageTester::new($ephemeral_storage_builder());
+                    tester.save_load().await;
                 }
             }
         };

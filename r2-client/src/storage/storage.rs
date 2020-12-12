@@ -100,11 +100,14 @@ pub trait StorageObject: Serialize + DeserializeOwned + Send + Sync {
 #[cfg(test)]
 #[macro_use]
 pub mod test {
-    use super::{Storage, StorageExclusiveGuard, StorageSharedGuard};
+    use super::{Storage, StorageExclusiveGuard, StorageSharedGuard, StorageObject};
     use crate::model::Snapshot;
     use crate::test_utils::commit::*;
     use crate::test_utils::user::*;
+    use serde::{Serialize, Deserialize};
+    use std::borrow::Borrow;
     use std::fmt::Debug;
+    use std::path::PathBuf;
     use std::mem;
 
     pub struct StorageTester<T: Storage>(T)
@@ -328,6 +331,39 @@ pub mod test {
                 "storage didn't write commit author properly"
             );
         }
+
+        pub async fn save_load(&self) {
+            let mut s = self.0.try_exclusive().unwrap();
+
+            #[derive(Debug, Serialize, Deserialize, PartialEq)]
+            struct X {
+                i: i32,
+                s: String,
+            }
+            impl StorageObject for X {
+                type Id = ();
+                fn save_path(&self, root: &PathBuf) -> PathBuf {
+                    assert_eq!(42, self.i, "self got mangled");
+                    assert_eq!("asd", self.s, "self got mangled");
+                    root.join("x")
+                }
+                fn load_path<ID>(root: &PathBuf, _id: &ID) -> PathBuf
+                where
+                    Self::Id: Borrow<ID>,
+                {
+                    root.join("x")
+                }
+            }
+
+            let a = X {
+                i: 42,
+                s: "asd".to_owned(),
+            };
+            s.save(&a).await.expect("can't save object");
+
+            let b: X = s.load(&()).await.expect("can't save object");
+            assert_eq!(a, b, "storage mangled object");
+        }
     }
 
     /*
@@ -371,6 +407,7 @@ pub mod test {
                 test_async_method!(save_load_current_snapshot);
                 test_async_method!(save_load_doc_collaborator);
                 test_async_method!(save_load_commit_author);
+                test_async_method!(save_load);
             }
         };
     }

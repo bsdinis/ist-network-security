@@ -174,19 +174,11 @@ pub mod test {
     }
 
     impl TempDirFilesystemStorage {
-        pub const FILE_NAME: &'static str = "thefile.txt";
-        pub const FILE_INITIAL_CONTENTS: &'static str = "hey";
-
         pub fn new() -> Self {
             let dir = TempDir::new("r2fstor_test")
                 .expect("!NOT A TEST PROBLEM! failed to create ephemeral storage directory !NOT A TEST PROBLEM!");
 
-            eprintln!("Test dir is {:?}", dir.path());
-            let file_path = dir.path().join(Self::FILE_NAME);
-            std::fs::write(&file_path, Self::FILE_INITIAL_CONTENTS)
-                .expect("failed to create test file in storage");
-
-            let storage = FilesystemStorage::new(file_path).expect("failed to create storage");
+            let storage = FilesystemStorage::new(dir.path().to_path_buf()).expect("failed to create storage");
 
             TempDirFilesystemStorage(Arc::new(dir), storage)
         }
