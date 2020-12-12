@@ -24,9 +24,8 @@ use std::convert::TryInto;
 
 use openssl_utils::aead::NONCE_SIZE as AEAD_NONCE_SIZE;
 
-use eyre::eyre;
 use eyre::Report as Error;
-use eyre::Result;
+use eyre::{eyre, Result, WrapErr};
 
 /// A File tracked by R2
 pub struct File<S: Storage, RF: RemoteFile, CF: CollaboratorFetcher>
@@ -36,6 +35,8 @@ where
     CF: Sync,
     Error: From<S::Error>,
     Error: From<RF::Error>,
+    S::Error: Send + Sync + std::error::Error + 'static,
+    RF::Error: Send + Sync + std::error::Error + 'static,
     RF::Id: Serialize + DeserializeOwned + Send + Sync,
     for<'de> RF::Id: Deserialize<'de>,
 {
@@ -85,7 +86,9 @@ where
     CF: Sync,
     Error: From<S::Error>,
     Error: From<RF::Error>,
-    RF::Id: Serialize + DeserializeOwned + Send + Sync,
+    S::Error: Send + Sync + std::error::Error + 'static,
+    RF::Error: Send + Sync + std::error::Error + 'static,
+    RF::Id: Serialize + DeserializeOwned + Send + Sync + 'static,
     for<'de> RF::Id: Deserialize<'de>,
 {
     /// Open existing file repo
@@ -98,6 +101,7 @@ where
     where
         R: Remote<Id = RF::Id, File = RF>,
         Error: From<R::Error>,
+        R::Error: Send + Sync + std::error::Error,
     {
         let config: RepoConfig<RF::Id> = {
             let s = storage.try_exclusive()?;
@@ -127,6 +131,7 @@ where
     where
         R: Remote<Id = RF::Id, File = RF>,
         Error: From<R::Error>,
+        R::Error: Send + Sync + std::error::Error + 'static,
     {
         let mut s = storage.try_exclusive()?;
 
@@ -160,7 +165,10 @@ where
             )
             .try_collect()?;
 
-        let remote = remote.create(ciphered_commit, collaborators).await?;
+        let remote = remote
+            .create(ciphered_commit, collaborators)
+            .await
+            .wrap_err("Failed creating file in remote")?;
         s.save_remote_head(&initial_commit.id).await?;
 
         let config = RepoConfig {
@@ -188,6 +196,7 @@ where
     ) -> Result<Self, Error>
     where
         Error: From<R::Error>,
+        R::Error: Send + Sync + std::error::Error + 'static,
     {
         let mut remote = remote.open(remote_id).await?;
         let mut s = storage.try_exclusive()?;
@@ -244,6 +253,8 @@ where
     CF: Sync,
     Error: From<S::Error>,
     Error: From<RF::Error>,
+    S::Error: Send + Sync + std::error::Error + 'static,
+    RF::Error: Send + Sync + std::error::Error + 'static,
     RF::Id: Serialize + DeserializeOwned + Send + Sync,
     for<'de> RF::Id: Deserialize<'de>,
 {
