@@ -136,10 +136,10 @@ impl RemoteFile for DummyRemoteFile {
         Ok(data.collaborators.values().cloned().collect())
     }
 
-    async fn save_collaborators(
+    async fn edit_collaborators(
         &mut self,
         _collaborators: Vec<RemoteCollaborator>,
-        _commits: Option<Vec<CipheredCommit>>,
+        _commits: Vec<CipheredCommit>,
     ) -> Result<(), Self::Error> {
         unimplemented!()
     }

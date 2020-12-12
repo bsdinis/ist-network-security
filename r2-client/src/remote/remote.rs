@@ -28,10 +28,10 @@ pub trait RemoteFile {
 
     async fn load_collaborators(&mut self) -> Result<Vec<RemoteCollaborator>, Self::Error>;
 
-    async fn save_collaborators(
+    async fn edit_collaborators(
         &mut self,
         collaborators: Vec<RemoteCollaborator>,
-        commits: Option<Vec<CipheredCommit>>,
+        commits: Vec<CipheredCommit>,
     ) -> Result<(), Self::Error>;
 
     async fn vote_rollback(

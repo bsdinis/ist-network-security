@@ -20,9 +20,30 @@ pub enum Vote {
     Against,
 }
 
+pub struct Rollback {
+    pub document_id: String,
+    pub vote: Vote,
+    pub target_commit_id: String,
+    pub dropped_commit_ids: Vec<String>,
+    pub all_commits: Vec<CipheredCommit>,
+    pub collaborators: Vec<RemoteCollaborator>,
+}
+
+pub struct Squash {
+    pub document_id: String,
+    pub vote: Vote,
+    pub dropped_commit_ids: Vec<String>,
+    pub all_commits: Vec<CipheredCommit>,
+    pub collaborators: Vec<RemoteCollaborator>,
+}
+
 pub struct FileMetadata {
     pub head: String,
     pub document_key: CipheredDocumentKey,
+    //pub pending_squash: Option<Squash>,
+    //pub squash_vote_tally: i64,
+    //pub pending_rollback: Option<Rollback>,
+    //pub rollback_vote_tally: i64,
 }
 
 #[derive(Clone)]
@@ -34,7 +55,7 @@ pub struct CipheredCommit {
 #[derive(Clone)]
 pub struct RemoteCollaborator {
     pub id: CollaboratorId,
-    pub document_key: CipheredDocumentKey,
+    pub document_key: CipheredDocumentKey, // <------- NOVA CHAVE DO DOC PARA CADA COLABORADOR com chave publica deles
 }
 
 impl RemoteCollaborator {

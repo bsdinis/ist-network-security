@@ -10,7 +10,7 @@ mod test_utils;
 
 pub use collab_fetcher::*;
 use model::*;
-use openssl_utils::{AeadKey, KeyUnsealer, SealedAeadKey};
+use openssl_utils::{AeadKey, KeySealer, KeyUnsealer, SealedAeadKey};
 use remote::model::*;
 use remote::*;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -303,13 +303,165 @@ where
         Ok(())
     }
 
+    // async fn fetch_collaborator(&self, s: &mut S::ExclusiveGuard, id: &[u8]) -> Result<DocCollaborator, Error> {
+    //     match s.load_doc_collaborator(id).await? {
+    //         None => {
+    //             let collab = self
+    //                 .collab_fetcher
+    //                 .fetch_doc_collaborator(id)
+    //                 .await?;
+    //             s.save_commit_author(&author).await?;
+
+    //             collab
+    //         }
+    //         Some(a) => a,
+    //     };
+    // }
+
     /// Initiate or vote for a rollback
     /// Analogous to a global [`Self::reset()`]
     pub async fn rollback(
-        &self,
-        _rev: RichRevisionId,
-        _softness: ResetHardness,
+        &mut self,
+        rev: RichRevisionId,
+        softness: ResetHardness,
+        cancel: bool,
     ) -> Result<(), Error> {
+        // use RichRevisionId::*;
+
+        // let mut storage = self.storage.try_exclusive()?;
+
+        // // get my vote
+        // let vote = if cancel { Vote::Against } else { Vote::For };
+
+        // // get my target commit
+        // let target_commit_id = match rev {
+        //     CommitId(id) => id,
+        //     RelativeHead(n) => storage.head_minus(n).await?,
+        //     RelativeRemoteHead(n) => storage.remote_head_minus(n).await?,
+        //     Uncommitted => return Ok(()),
+        // };
+
+        // // get my dropped commit ids
+        // let head = storage.load_head().await?;
+        // let dropped_commits = storage
+        //     .walk_back_from_commit(&head, Some(&target_commit_id))
+        //     .await?;
+        // let dropped_commit_ids: Vec<&String> = dropped_commits
+        //     .into_iter()
+        //     .map(|commit| &commit.id)
+        //     .collect();
+
+        // // get my kept commits
+        // let kept_commits = storage
+        //     .walk_back_from_commit(&target_commit_id, None)
+        //     .await?;
+
+        // // get collaborators
+        // let remote_collaborators = self.remote.load_collaborators().await?;
+
+        // // start a new rollback or vote in one
+        // let metadata = self.remote.load_metadata().await?;
+        // let my_collab_id = self.me.doc_collaborator_id();
+        // match metadata.pending_rollback {
+        //     Some(rollback) => {
+        //         let mut new_doc_key: Option<SealedAeadKey>;
+        //         if rollback.collaborators.len() != remote_collaborators.len() {
+        //             return Err(eyre!(
+        //                 "Rollback in progress with incompatible collaborators list"
+        //             ));
+        //         }
+        //         use openssl_utils::X509Ext;
+        //         while let Some(collaborator) = rollback.collaborators.pop() {
+        //             let cert = self.collab_fetcher.fetch_cert(&collaborator.id).await?;
+        //             let cert = unsafe { cert.validate_unchecked() };
+        //             if collaborator.id == my_collab_id {
+        //                 new_doc_key = Some(collaborator.document_key);
+        //                 break;
+        //             }
+        //         }
+        //         if let Some(key) = new_doc_key {
+        //             self.update_document_key_sealed(&mut storage, &key).await?;
+        //         } else {
+        //             return Err(eyre!("Rollback in progress but you're not in collab list"));
+        //         }
+
+        //         // TODO: I may not be a collaborator and new_doc_key is undefined!
+
+        //         // get remote kept commits
+        //         let remote_kept_commits: Vec<Commit> = {
+        //             let remote_kept_commits = Vec::new();
+        //             while let Some(ciphered_commit) = rollback.all_commits.pop() {
+        //                 remote_kept_commits
+        //                     .push(self.decipher_commit(&mut storage, ciphered_commit).await?)
+        //             }
+        //             remote_kept_commits
+        //         };
+
+        //         // compare my rollback with remote pending rollback
+        //         if target_commit_id != rollback.target_commit_id
+        //             || kept_commits.len() != remote_kept_commits.len()
+        //             || dropped_commit_ids.len() != rollback.dropped_commit_ids.len()
+        //         {
+        //             return Err(eyre!("Different rollback in execution"));
+        //         }
+        //         for (i, _) in kept_commits.iter().enumerate() {
+        //             if kept_commits[i] != remote_kept_commits[i] {
+        //                 return Err(eyre!("Different rollback in execution"));
+        //             }
+        //         }
+        //         for (i, _) in dropped_commit_ids.iter().enumerate() {
+        //             if dropped_commit_ids[i] != dropped_commit_ids[i] {
+        //                 return Err(eyre!("Different rollback in execution"));
+        //             }
+        //         }
+
+        //         // compare
+        //     }
+        //     None => {
+        //         if let Vote::Against = vote {
+        //             // No rollback in progress, nothing do vote
+        //             return Ok(());
+        //         }
+
+        //         // generate new doc_key
+        //         let mut new_doc_key = self.me.seal_key(&AeadKey::gen_key()?)?;
+        //         //kinda stupid sealing and then unsealing, maybe create me.gen_new_key()
+        //         self.update_document_key(&mut storage, &new_doc_key).await?;
+
+        //         // get all colaborators and cipher the new doc key with their pub key
+        //     }
+        // }
+
+        // // get kept remote commits
+        // let rem_kept_commits = metadata.all_commits;
+
+        // let mut rekeyed_commits = Vec::<CipheredCommit>::new();
+        // for commit in kept_commits {
+        //     rekeyed_commits.push(self.cipher_commit(&storage, &commit).await?);
+        // }
+
+        // let mut collaborators;
+        // for collaborator in collaborators {
+        //     //re-key each collaborator
+        // }
+        // let response = self
+        //     .remote
+        //     .vote_rollback(
+        //         vote,
+        //         &target_commit_id,
+        //         &dropped_commit_ids.as_slice(),
+        //         rekeyed_collaborators,
+        //         rekeyed_commits,
+        //     )
+        //     .await?;
+
+        // if response > collaborators.len() / 2 + 1 {
+        //     //quorum?
+        //     storage.save_head(&target_commit_id);
+        //     // If I started the voting then perform storage.save_head_remote ?
+        // }
+
+        // Ok(())
         unimplemented!()
     }
 
@@ -326,7 +478,7 @@ where
         let cur_remote_head = s.load_remote_head().await?;
 
         let metadata = self.remote.load_metadata().await?;
-        self.update_document_key(&mut s, &metadata.document_key)
+        self.update_document_key_sealed(&mut s, &metadata.document_key)
             .await?;
         if cur_remote_head == metadata.head {
             return Ok(vec![]);
@@ -431,6 +583,47 @@ where
         })
     }
 
+    pub async fn edit_collaborators(
+        &mut self,
+        doc_collaborators: Vec<DocCollaborator>,
+    ) -> Result<(), Error> {
+        let mut s = self.storage.try_exclusive()?;
+
+        //TODO: somehow check if I'm the owner, or wait for server to complain?
+
+        let head = s.load_head().await?;
+        let commits = s.walk_back_from_commit(&head, None).await?;
+
+        let new_doc_key = AeadKey::gen_key()?;
+        //kinda stupid sealing and then unsealing, maybe create me.gen_new_key()
+        self.update_document_key_unsealed(&mut s, &new_doc_key)
+            .await?;
+
+        let collaborators = {
+            let mut collaborators = Vec::with_capacity(doc_collaborators.len());
+            for collaborator in doc_collaborators {
+                collaborators.push(RemoteCollaborator::from_doc_collaborator(
+                    &collaborator,
+                    &new_doc_key,
+                )?);
+            }
+            collaborators
+        };
+
+        let ciphered_commits = {
+            let mut ciphered_commits = Vec::with_capacity(commits.len());
+            for commit in commits {
+                ciphered_commits.push(self.cipher_commit(&s, &commit).await?);
+            }
+            ciphered_commits
+        };
+
+        self.remote
+            .edit_collaborators(collaborators, ciphered_commits);
+
+        Ok(())
+    }
+
     /// Get a commit author by ID
     /// Will not try to fetch commit authors not yet seen.
     pub async fn get_commit_author(&self, id: &[u8]) -> Result<CommitAuthor, Error> {
@@ -480,12 +673,22 @@ where
         unverified.verify(&author).map_err(|e| e.into())
     }
 
-    async fn update_document_key(
+    async fn update_document_key_sealed(
         &mut self,
         s: &mut S::ExclusiveGuard,
         key: &SealedAeadKey,
     ) -> Result<(), Error> {
         let key = self.me.unseal_key(key)?;
+        self.update_document_key_unsealed(s, &key).await?;
+
+        Ok(())
+    }
+    async fn update_document_key_unsealed(
+        &mut self,
+        s: &mut S::ExclusiveGuard,
+        key: &AeadKey,
+    ) -> Result<(), Error> {
+        let key = key.to_owned();
         if key != self.config.document_key {
             self.config.document_key = key;
             s.save(&self.config).await?;

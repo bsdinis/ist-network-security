@@ -21,7 +21,7 @@ type File =
 #[derive(StructOpt)]
 #[structopt(name = "r2-store")]
 struct Opt {
-    ///Command
+    /// Command
     #[structopt(subcommand)]
     command: Command,
 
@@ -93,11 +93,15 @@ enum Command {
         revision: String,
         #[structopt(flatten)]
         hardness: Hardness,
+        #[structopt(long)]
+        cancel: bool,
     },
     /// Join commits until expecified commit
     Squash { revision: String },
     /// Show commit logs
     Log,
+    /// Adds collaborators
+    EditCollaborators { collaborators: Vec<String> },
 }
 
 #[derive(StructOpt)]
@@ -215,8 +219,13 @@ async fn main() -> color_eyre::eyre::Result<()> {
                 revision2,
             } => diff(file, revision1, revision2).await?,
             Command::Reset { revision, hardness } => reset(file, revision, hardness).await?,
-            Command::Rollback { revision, hardness } => rollback(file, revision, hardness).await?,
+            Command::Rollback {
+                revision,
+                hardness,
+                cancel,
+            } => rollback(file, revision, hardness, cancel).await?,
             Command::Squash { revision } => squash(file, revision).await?,
+            Command::EditCollaborators { collaborators } => edit_collaborators(file, collaborators),
 
             Command::Init { .. } => unreachable!(),
             Command::Clone { .. } => unreachable!(),
@@ -375,18 +384,37 @@ async fn diff(file: File, revision1: String, revision2: String) -> Result<()> {
 
     Ok(())
 }
+
 async fn reset(file: File, revision: String, hardness: Hardness) -> Result<()> {
     let revision = parse_ref(&revision)?;
     let _reset = file.reset(revision, hardness.into()).await?;
     Ok(())
 }
-async fn rollback(file: File, revision: String, hardness: Hardness) -> Result<()> {
+
+async fn rollback(
+    mut file: File,
+    revision: String,
+    hardness: Hardness,
+    cancel: bool,
+) -> Result<()> {
     let revision = parse_ref(&revision)?;
-    let _rollback = file.rollback(revision, hardness.into()).await?;
+    let _rollback = file.rollback(revision, hardness.into(), cancel).await?;
     Ok(())
 }
+
 async fn squash(file: File, revision: String) -> Result<()> {
     let revision = parse_ref(&revision)?;
     let _squash = file.squash(revision).await?;
+    Ok(())
+}
+
+async fn edit_collaborators(file: File, collaborators: Vec<String>) -> Result<()> {
+    let mut collaborators = Vec::with_capacity(collaborators.len());
+    for id_str in collaborators {
+        let id = hex::decode(&id_str)?;
+
+        collaborators.push(collab_fetcher.fetch_doc_collaborator(&id).await?);
+    }
+    file.edit_collaborators(collaborators)?;
     Ok(())
 }

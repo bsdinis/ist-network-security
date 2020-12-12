@@ -138,15 +138,40 @@ impl RemoteFile for GrpcRemoteFile {
     }
 
     async fn load_collaborators(&mut self) -> Result<Vec<RemoteCollaborator>, Self::Error> {
-        unimplemented!()
+        let req = protos::GetCollaboratorsRequest {
+            document_id: self.id.to_owned(),
+        };
+
+        let resp = self.client.get_collaborators(req).await?.into_inner();
+
+        Ok(resp
+            .collaborators
+            .into_iter()
+            .map(|collab| collab.into())
+            .collect())
     }
 
-    async fn save_collaborators(
+    async fn edit_collaborators(
         &mut self,
-        _collaborators: Vec<RemoteCollaborator>,
-        _commits: Option<Vec<CipheredCommit>>,
+        collaborators: Vec<RemoteCollaborator>,
+        commits: Vec<CipheredCommit>,
     ) -> Result<(), Self::Error> {
-        unimplemented!()
+        let collaborators = collaborators
+            .into_iter()
+            .map(|collab| collab.into())
+            .collect();
+
+        let commits = commits.into_iter().map(|commit| commit.into()).collect();
+
+        let req = protos::EditCollaboratorsRequest {
+            document_id: self.id.to_owned(),
+            collaborators: collaborators,
+            commits: commits,
+        };
+
+        let _ = self.client.edit_collaborators(req).await?;
+
+        Ok(())
     }
 
     async fn vote_rollback(
@@ -235,3 +260,70 @@ impl From<protos::GetMetadataResponse> for FileMetadata {
         }
     }
 }
+
+//     impl TryFrom<protos::GetMetadataResponse> for FileMetadata {
+//         type Error = GrpcRemoteError;
+
+//         fn try_from(msg: protos::GetMetadataResponse) -> Result<Self, Self::Error> {
+//             Ok(FileMetadata {
+//                 head: msg.head,
+//                 document_key: SealedAeadKey(msg.ciphered_document_key),
+//                 pending_squash: {
+//                     match msg.pending_squash {
+//                         Some(squash) => Some(Squash {
+//                             document_id: squash.document_id,
+//                             vote: if squash.vote {
+//                                 Vote::For
+//                             } else {
+//                                 Vote::Against
+//                             },
+//                             dropped_commit_ids: squash.dropped_commit_ids,
+//                             all_commits: {
+//                                 let commits = Vec::new();
+//                                 for commit in squash.all_commits {
+//                                     let commit = commit.try_into()?;
+//                                     commits.push(commit);
+//                                 }
+//                                 commits
+//                             },
+//                             collaborators: squash
+//                                 .collaborators
+//                                 .into_iter()
+//                                 .map(|remote_collaborator| remote_collaborator.into())
+//                                 .collect(),
+//                         }),
+//                         None => None,
+//                     }
+//                 },
+//                 squash_vote_tally: msg.squash_vote_tally.into(),
+//                 pending_rollback: {
+//                     match msg.pending_rollback {
+//                         Some(rollback) => Some(Rollback {
+//                             document_id: rollback.document_id,
+//                             vote: if rollback.vote {
+//                                 Vote::For
+//                             } else {
+//                                 Vote::Against
+//                             },
+//                             target_commit_id: rollback.target_commit_id,
+//                             dropped_commit_ids: rollback.dropped_commit_ids,
+//                             all_commits: {
+//                                 let commits = Vec::new();
+//                                 for commit in rollback.all_commits {
+//                                     let commit = commit.try_into()?;
+//                                     commits.push(commit);
+//                                 }
+//                                 commits
+//                             },
+//                             collaborators: rollback
+//                                 .collaborators
+//                                 .into_iter()
+//                                 .map(|remote_collaborator| remote_collaborator.into())
+//                                 .collect(),
+//                         }),
+//                         None => None,
+//                     }
+//                 },
+//                 rollback_vote_tally: msg.rollback_vote_tally.into(),
+//             })
+// }

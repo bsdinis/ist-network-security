@@ -1,5 +1,5 @@
 use nom::character::complete::hex_digit1;
-use nom::combinator::{complete, eof, value};
+use nom::combinator::{all_consuming, complete};
 use nom::sequence::preceded;
 use nom::{branch::alt, combinator::map};
 use nom::{bytes::complete::tag, character::complete::digit1};
@@ -40,16 +40,5 @@ pub fn parse_ref(ref_: &str) -> Result<RichRevisionId> {
         current_parser,
         commit_id_parser,
     ));
-    let mut parse = complete(parse);
-
-    let ref_ = parse(ref_)
-        .and_then(|(leftovers, res)| {
-            if leftovers.len() != 0 {
-                Err(nom::Err::Error((leftovers, nom::error::ErrorKind::Eof)))
-            } else {
-                Ok(res)
-            }
-        })
-        .map_err(|e| e.to_owned())?;
-    Ok(ref_)
+    Ok(all_consuming(parse)(&ref_).map_err(|e| e.to_owned())?.1)
 }
