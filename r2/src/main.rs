@@ -414,14 +414,14 @@ async fn squash(file: File, revision: String) -> Result<()> {
     Ok(())
 }
 
-async fn edit_collaborators(file: File, collaborators: Vec<String>) -> Result<()> {
-    let mut collaborators = Vec::with_capacity(collaborators.len());
+async fn edit_collaborators(mut file: File, collaborator_strs: Vec<String>) -> Result<()> {
+    let mut collaborators = Vec::with_capacity(collaborator_strs.len());
     let collab_fetcher = file.collab_fetcher();
-    for id_str in collaborators {
+    for id_str in collaborator_strs {
         let id = hex::decode(&id_str)?;
 
         collaborators.push(collab_fetcher.fetch_doc_collaborator(&id).await?);
     }
-    file.edit_collaborators(collaborators)?;
+    file.edit_collaborators(collaborators).await?;
     Ok(())
 }
