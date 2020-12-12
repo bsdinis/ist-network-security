@@ -415,10 +415,18 @@ where
     }
 
     /// Get all commits starting from the HEAD (most recent first)
-    pub async fn log(&self) -> Result<FileLog, Error> {
+    pub async fn log(&self, rev: RichRevisionId) -> Result<FileLog, Error> {
+        use RichRevisionId::*;
         let s = self.storage.try_shared()?;
 
-        let mut prev_id = Some(s.load_head().await?);
+        let commit_id = match rev {
+            CommitId(id) => id,
+            RelativeHead(n) => s.head_minus(n).await?,
+            RelativeRemoteHead(n) => s.remote_head_minus(n).await?,
+            Uncommitted => return Err(eyre!("Uncommitted changes are not present in history. Can't start log there")),
+        };
+
+        let mut prev_id = Some(commit_id);
         let mut commits = Vec::new();
         while let Some(id) = prev_id {
             let commit = s.load_commit(&id).await?;

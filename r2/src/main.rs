@@ -5,7 +5,7 @@ use openssl::x509::X509;
 use r2_client::model::{Commit, Me};
 use r2_client::remote::{GrpcRemote, Remote};
 use r2_client::storage::FilesystemStorage;
-use r2_client::{CollaboratorFetcher, IdentityCollaboratorFetcher, ResetHardness};
+use r2_client::{CollaboratorFetcher, IdentityCollaboratorFetcher, ResetHardness, RichRevisionId};
 use std::path::PathBuf;
 use std::sync::Arc;
 use structopt::StructOpt;
@@ -94,10 +94,10 @@ enum Command {
         #[structopt(flatten)]
         hardness: Hardness,
     },
-    /// Join commits until expecified commit
+    /// Join commits until specified commit
     Squash { revision: String },
-    /// Show commit logs
-    Log,
+    /// Show commit logs (from specified commit, HEAD if none provided, to the beginning of history)
+    Log { revision: Option<String> },
 }
 
 #[derive(StructOpt)]
@@ -206,7 +206,7 @@ async fn main() -> Result<()> {
             Command::Commit { message } => commit(file, message).await?,
             Command::Fetch => fetch(&mut file).await?,
             Command::Pull { force } => pull(file, force).await?,
-            Command::Log => log(file).await?,
+            Command::Log { revision } => log(file, revision).await?,
             Command::Diff {
                 revision1,
                 revision2,
@@ -332,8 +332,9 @@ async fn pull(mut file: File, force: bool) -> Result<()> {
     }
     Ok(())
 }
-async fn log(file: File) -> Result<()> {
-    let log = file.log().await?;
+async fn log(file: File, revision: Option<String>) -> Result<()> {
+    let revision = revision.map(|r| parse_ref(&r)).unwrap_or(Ok(RichRevisionId::RelativeHead(0)))?;
+    let log = file.log(revision).await?;
 
     for commit in log.commits {
         let author = file.get_commit_author(&commit.author_id).await?;
@@ -363,7 +364,7 @@ fn get_refs_vec(commit: &Commit, head: &str, remote_head: &str) -> Vec<&'static 
         res.push("HEAD");
     }
     if commit.id == remote_head {
-        res.push("origin/HEAD");
+        res.push("remote/HEAD");
     }
     res
 }
