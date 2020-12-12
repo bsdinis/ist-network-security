@@ -3,12 +3,15 @@ use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 
 use argh::FromArgs;
+use eyre::Result;
 
 use protos::client_api_server::ClientApiServer;
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
 pub mod services;
+mod storage;
 use services::service::ClientApiService;
+use tracing::{event, Level};
 
 /// Tokio Rustls server example
 #[derive(FromArgs)]
@@ -31,7 +34,7 @@ struct Options {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     let options: Options = argh::from_env();
 
     let addr = options
@@ -51,12 +54,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .identity(server_identity)
         .client_ca_root(ca_cert);
 
+    let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stderr());
+    let subscriber = tracing_subscriber::fmt().with_writer(non_blocking).finish();
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Unable to set global default subscriber");
+
     let server = Server::builder()
         .tls_config(tls_config)?
-        .add_service(ClientApiServer::new(ClientApiService::new()))
+        .add_service(ClientApiServer::new(ClientApiService::new().await?))
         .serve_with_shutdown(addr, ctrl_c());
 
-    println!("Sever listening on {:?}", addr);
+    event!(Level::INFO, "Sever listening on {:?}", addr);
     server.await?;
 
     println!("Bye!");

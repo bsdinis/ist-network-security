@@ -4,9 +4,18 @@ use protos::client_api_server::ClientApi;
 use protos::*;
 use tokio::sync::mpsc;
 use tonic::{Request, Response, Status};
+use tracing::instrument;
+use uuid::Uuid;
+
+fn convert_to_uuid(s: &str) -> Result<Uuid, Status> {
+    Uuid::parse_str(s).map_err(|err| {
+        Status::invalid_argument(format!("failed to parse UUID from `{}`: {:?}", s, err))
+    })
+}
 
 #[tonic::async_trait]
 impl ClientApi for ClientApiService {
+    #[instrument]
     async fn create(
         &self,
         request: Request<CreateRequest>,
@@ -22,12 +31,14 @@ impl ClientApi for ClientApiService {
                     .map(|x| (x.auth_fingerprint.clone(), x.ciphered_document_key.clone()))
                     .collect(),
             )
+            .await
             .map_err(|err| Status::invalid_argument(format!("error: {:?}", err)))?;
         Ok(Response::new(CreateResponse {
-            document_id: doc_id,
+            document_id: doc_id.to_simple().to_string(),
         }))
     }
 
+    #[instrument]
     async fn get_metadata(
         &self,
         request: Request<GetMetadataRequest>,
@@ -35,7 +46,11 @@ impl ClientApi for ClientApiService {
         let client_id = authenticate(&request).await?;
 
         let metadata = self
-            .get_metadata(&request.get_ref().document_id, &client_id)
+            .get_metadata(
+                &convert_to_uuid(&request.get_ref().document_id)?,
+                &client_id,
+            )
+            .await
             .ok_or_else(|| {
                 Status::not_found(format!(
                     "document {} was not found",
@@ -100,16 +115,18 @@ impl ClientApi for ClientApiService {
         }))
     }
 
+    #[instrument]
     async fn get_commit(
         &self,
         request: Request<GetCommitRequest>,
     ) -> Result<Response<GetCommitResponse>, Status> {
         let client_id = authenticate(&request).await?;
         self.get_commit(
-            &request.get_ref().document_id,
+            &convert_to_uuid(&request.get_ref().document_id)?,
             &client_id,
             &request.get_ref().commit_id,
         )
+        .await
         .map(|x| {
             Response::new(GetCommitResponse {
                 commit: Some(Commit {
@@ -135,6 +152,7 @@ impl ClientApi for ClientApiService {
         })
     }
 
+    #[instrument]
     async fn commit(
         &self,
         request: Request<CommitRequest>,
@@ -152,26 +170,32 @@ impl ClientApi for ClientApiService {
             aad: req_commit.aad,
             tag: req_commit.tag,
         };
-        self.commit(&request.get_ref().document_id, &client_id, commit)
-            .map_err(|err| match err {
-                ServiceError::AuthorizationError(user_id, doc_id) => {
-                    Status::unauthenticated(format!("{} cannot access {}", user_id, doc_id))
-                }
-                ServiceError::DocumentNotFound(doc_id) => {
-                    Status::not_found(format!("document {}", doc_id))
-                }
-                _ => Status::unimplemented(format!("unknown error for commit: {:?}", err)),
-            })
-            .map(|_| Response::new(CommitResponse {}))
+        self.commit(
+            &convert_to_uuid(&request.get_ref().document_id)?,
+            &client_id,
+            commit,
+        )
+        .await
+        .map_err(|err| match err {
+            ServiceError::AuthorizationError(user_id, doc_id) => {
+                Status::unauthenticated(format!("{} cannot access {}", user_id, doc_id))
+            }
+            ServiceError::DocumentNotFound(doc_id) => {
+                Status::not_found(format!("document {}", doc_id))
+            }
+            _ => Status::unimplemented(format!("unknown error for commit: {:?}", err)),
+        })
+        .map(|_| Response::new(CommitResponse {}))
     }
 
+    #[instrument]
     async fn edit_collaborators(
         &self,
         request: Request<EditCollaboratorsRequest>,
     ) -> Result<Response<EditCollaboratorsResponse>, Status> {
         let client_id = authenticate(&request).await?;
         self.edit_collaborators(
-            &request.get_ref().document_id,
+            &convert_to_uuid(&request.get_ref().document_id)?,
             &client_id,
             request
                 .get_ref()
@@ -180,6 +204,7 @@ impl ClientApi for ClientApiService {
                 .map(|c| (c.auth_fingerprint.clone(), c.ciphered_document_key.clone()))
                 .collect(),
         )
+        .await
         .map_err(|err| match err {
             ServiceError::AuthorizationError(user_id, doc_id) => {
                 Status::unauthenticated(format!("{} cannot access {}", user_id, doc_id))
@@ -192,12 +217,14 @@ impl ClientApi for ClientApiService {
         .map(|_| Response::new(EditCollaboratorsResponse {}))
     }
 
+    #[instrument]
     async fn get_collaborators(
         &self,
         request: Request<GetCollaboratorsRequest>,
     ) -> Result<Response<GetCollaboratorsResponse>, Status> {
-        let doc_id = &request.get_ref().document_id;
+        let doc_id = &convert_to_uuid(&request.get_ref().document_id)?;
         self.get_collaborators(doc_id)
+            .await
             .ok_or_else(|| Status::not_found(format!("document {}", doc_id)))
             .map(|collabs| {
                 Response::new(GetCollaboratorsResponse {
@@ -213,6 +240,7 @@ impl ClientApi for ClientApiService {
     }
 
     type squashStream = mpsc::Receiver<Result<SquashResponse, Status>>;
+    #[instrument]
     async fn squash(
         &self,
         request: Request<SquashRequest>,
@@ -226,6 +254,7 @@ impl ClientApi for ClientApiService {
     }
 
     type rollbackStream = mpsc::Receiver<Result<RollbackResponse, Status>>;
+    #[instrument]
     async fn rollback(
         &self,
         request: Request<RollbackRequest>,
