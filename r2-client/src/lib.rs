@@ -24,9 +24,8 @@ use std::convert::TryInto;
 
 use openssl_utils::aead::NONCE_SIZE as AEAD_NONCE_SIZE;
 
-use eyre::eyre;
 use eyre::Report as Error;
-use eyre::Result;
+use eyre::{eyre, Result, WrapErr};
 
 /// A File tracked by R2
 pub struct File<S: Storage, RF: RemoteFile, CF: CollaboratorFetcher>
@@ -36,6 +35,8 @@ where
     CF: Sync,
     Error: From<S::Error>,
     Error: From<RF::Error>,
+    S::Error: Send + Sync + std::error::Error + 'static,
+    RF::Error: Send + Sync + std::error::Error + 'static,
     RF::Id: Serialize + DeserializeOwned + Send + Sync,
     for<'de> RF::Id: Deserialize<'de>,
 {
@@ -85,7 +86,9 @@ where
     CF: Sync,
     Error: From<S::Error>,
     Error: From<RF::Error>,
-    RF::Id: Serialize + DeserializeOwned + Send + Sync,
+    S::Error: Send + Sync + std::error::Error + 'static,
+    RF::Error: Send + Sync + std::error::Error + 'static,
+    RF::Id: Serialize + DeserializeOwned + Send + Sync + 'static,
     for<'de> RF::Id: Deserialize<'de>,
 {
     /// Open existing file repo
@@ -98,6 +101,7 @@ where
     where
         R: Remote<Id = RF::Id, File = RF>,
         Error: From<R::Error>,
+        R::Error: Send + Sync + std::error::Error,
     {
         let config: RepoConfig<RF::Id> = {
             let s = storage.try_exclusive()?;
@@ -127,6 +131,7 @@ where
     where
         R: Remote<Id = RF::Id, File = RF>,
         Error: From<R::Error>,
+        R::Error: Send + Sync + std::error::Error + 'static,
     {
         let mut s = storage.try_exclusive()?;
 
@@ -160,7 +165,10 @@ where
             )
             .try_collect()?;
 
-        let remote = remote.create(ciphered_commit, collaborators).await?;
+        let remote = remote
+            .create(ciphered_commit, collaborators)
+            .await
+            .wrap_err("Failed creating file in remote")?;
         s.save_remote_head(&initial_commit.id).await?;
 
         let config = RepoConfig {
@@ -188,6 +196,7 @@ where
     ) -> Result<Self, Error>
     where
         Error: From<R::Error>,
+        R::Error: Send + Sync + std::error::Error + 'static,
     {
         let mut remote = remote.open(remote_id).await?;
         let mut s = storage.try_exclusive()?;
@@ -244,6 +253,8 @@ where
     CF: Sync,
     Error: From<S::Error>,
     Error: From<RF::Error>,
+    S::Error: Send + Sync + std::error::Error + 'static,
+    RF::Error: Send + Sync + std::error::Error + 'static,
     RF::Id: Serialize + DeserializeOwned + Send + Sync,
     for<'de> RF::Id: Deserialize<'de>,
 {
@@ -269,6 +280,7 @@ where
         self.remote
             .commit(self.cipher_commit(&storage, &commit).await?)
             .await?;
+        storage.save_remote_head(&commit.id).await?;
         storage.save_commit(&commit).await?;
         storage.save_head(&commit.id).await?;
 
@@ -281,13 +293,7 @@ where
         let mut storage = self.storage.try_exclusive()?;
 
         let commit_id = match rev {
-            CommitId(id) => {
-                // verify that commit id is in the current graph
-                let head = storage.load_head().await?;
-                let _ = storage.walk_back_from_commit(&head, Some(&id)).await?;
-
-                id
-            }
+            CommitId(id) => id,
             RelativeHead(n) => storage.head_minus(n).await?,
             RelativeRemoteHead(n) => storage.remote_head_minus(n).await?,
             Uncommitted => return Ok(()),
@@ -508,8 +514,10 @@ where
     }
 
     /// Merge changes from remote HEAD to current state
+    /// Returns (vec of merged commits, bool that indicates if merged was forced update, bool that
+    /// indicates merge conflicts)
     /// Only supports fast forwarding HEAD (but still performs 3-way merge to preserve uncommitted changes)
-    pub async fn merge_from_remote(&self, force: bool) -> Result<(), Error> {
+    pub async fn merge_from_remote(&self, force: bool) -> Result<(Vec<Commit>, bool, bool), Error> {
         let mut s = self.storage.try_exclusive()?;
 
         let current_state = s.load_current_snapshot().await?;
@@ -521,8 +529,10 @@ where
 
         // early exit if no commits need to be applied
         if commits_to_apply.is_empty() {
-            return Ok(());
+            return Ok((vec![], false, false));
         }
+
+        let mut is_forced_update = false;
 
         let ancestor = if commits_to_apply.last().unwrap().id != head {
             // history rewritten in remote
@@ -531,6 +541,8 @@ where
                     "History rewritten in remote. Can't merge without force"
                 ));
             }
+
+            is_forced_update = true;
 
             Snapshot::empty()
         } else {
@@ -551,20 +563,22 @@ where
         s.save_current_snapshot(merged_snapshot).await?;
         s.save_head(&remote_head).await?;
 
-        if merged.is_err() {
-            Err(eyre!(
-                "Merged with conflicts. Please fix them and commit the result."
-            ))
-        } else {
-            Ok(())
-        }
+        Ok((commits_to_apply, is_forced_update, merged.is_err()))
     }
 
     /// Get all commits starting from the HEAD (most recent first)
-    pub async fn log(&self) -> Result<FileLog, Error> {
+    pub async fn log(&self, rev: RichRevisionId) -> Result<FileLog, Error> {
+        use RichRevisionId::*;
         let s = self.storage.try_shared()?;
 
-        let mut prev_id = Some(s.load_head().await?);
+        let commit_id = match rev {
+            CommitId(id) => id,
+            RelativeHead(n) => s.head_minus(n).await?,
+            RelativeRemoteHead(n) => s.remote_head_minus(n).await?,
+            Uncommitted => return Err(eyre!("Uncommitted changes are not present in history. Can't start log there")),
+        };
+
+        let mut prev_id = Some(commit_id);
         let mut commits = Vec::new();
         while let Some(id) = prev_id {
             let commit = s.load_commit(&id).await?;

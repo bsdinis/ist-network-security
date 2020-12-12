@@ -3,9 +3,9 @@ use lib::parse_ref;
 use openssl::rsa::Rsa;
 use openssl::x509::X509;
 use r2_client::model::{Commit, Me};
-use r2_client::remote::{DummyRemote, GrpcRemote, Remote};
+use r2_client::remote::{GrpcRemote, Remote};
 use r2_client::storage::FilesystemStorage;
-use r2_client::{CollaboratorFetcher, IdentityCollaboratorFetcher, ResetHardness};
+use r2_client::{CollaboratorFetcher, IdentityCollaboratorFetcher, ResetHardness, RichRevisionId};
 use std::path::PathBuf;
 use std::sync::Arc;
 use structopt::StructOpt;
@@ -96,10 +96,10 @@ enum Command {
         #[structopt(long)]
         cancel: bool,
     },
-    /// Join commits until expecified commit
+    /// Join commits until specified commit
     Squash { revision: String },
-    /// Show commit logs
-    Log,
+    /// Show commit logs (from specified commit, HEAD if none provided, to the beginning of history)
+    Log { revision: Option<String> },
     /// Adds collaborators
     EditCollaborators { collaborators: Vec<String> },
 }
@@ -150,7 +150,7 @@ fn get_me(
 }
 
 #[tokio::main]
-async fn main() -> color_eyre::eyre::Result<()> {
+async fn main() -> Result<()> {
     color_eyre::install()?;
 
     let opt = Opt::from_args();
@@ -172,7 +172,6 @@ async fn main() -> color_eyre::eyre::Result<()> {
     let collab_fetcher = IdentityCollaboratorFetcher::new(&ca_cert, opt.identity_server_addr)?;
 
     let remote = GrpcRemote::new(uri, me.clone(), &ca_cert).expect("Couldn't create grpc remote");
-    //let remote = DummyRemote::new(me.clone());
 
     if let Command::Init {
         message,
@@ -209,11 +208,9 @@ async fn main() -> color_eyre::eyre::Result<()> {
 
         match opt.command {
             Command::Commit { message } => commit(file, message).await?,
-            Command::Fetch => {
-                fetch(&mut file).await?;
-            }
+            Command::Fetch => fetch(&mut file).await?,
             Command::Pull { force } => pull(file, force).await?,
-            Command::Log => log(file).await?,
+            Command::Log { revision } => log(file, revision).await?,
             Command::Diff {
                 revision1,
                 revision2,
@@ -291,7 +288,7 @@ async fn commit(mut file: File, message: String) -> Result<()> {
 
     Ok(())
 }
-async fn fetch(file: &mut File) -> Result<Vec<Commit>> {
+async fn fetch(file: &mut File) -> Result<()> {
     let fetched_commits: Vec<Commit> = file.fetch().await?;
     if fetched_commits.len() > 0 {
         let last = fetched_commits.first().unwrap();
@@ -304,13 +301,23 @@ async fn fetch(file: &mut File) -> Result<Vec<Commit>> {
         );
     }
 
-    Ok(fetched_commits)
+    Ok(())
 }
 async fn pull(mut file: File, force: bool) -> Result<()> {
-    let fetched_commits = fetch(&mut file).await?;
+    fetch(&mut file).await?;
+    let (merged_commits, is_forced, has_conflicts) = file.merge_from_remote(force).await?;
 
-    if fetched_commits.len() > 0 {
-        let stats = fetched_commits.iter().map(|c| commit_stats(c)).fold(
+    if merged_commits.len() > 0 {
+        let last = merged_commits.first().unwrap();
+        let first = merged_commits.last().unwrap();
+        println!("Updated {}..{}", first.id, last.id);
+        if is_forced {
+            println!("Forced update");
+        } else {
+            println!("Fast-forward");
+        }
+
+        let stats = merged_commits.iter().map(|c| commit_stats(c)).fold(
             CommitStats {
                 insertions: 0,
                 deletions: 0,
@@ -321,23 +328,22 @@ async fn pull(mut file: File, force: bool) -> Result<()> {
             },
         );
 
-        let last = fetched_commits.first().unwrap();
-        let first = fetched_commits.last().unwrap();
-        println!("Updating {}..{}", first.id, last.id);
-
-        file.merge_from_remote(force).await?; //TODO: check if fast forwarded or forced update
-
         println!(
             "\t{} insertions(+), {} deletions (+)",
             stats.insertions, stats.deletions
         );
+
+        if has_conflicts {
+            println!("ERROR: conflicts encountered while merging with remote. Please fix them manually and commit them.");
+        }
     } else {
         println!("Already up to date.")
     }
     Ok(())
 }
-async fn log(file: File) -> Result<()> {
-    let log = file.log().await?;
+async fn log(file: File, revision: Option<String>) -> Result<()> {
+    let revision = revision.map(|r| parse_ref(&r)).unwrap_or(Ok(RichRevisionId::RelativeHead(0)))?;
+    let log = file.log(revision).await?;
 
     for commit in log.commits {
         let author = file.get_commit_author(&commit.author_id).await?;
@@ -367,7 +373,7 @@ fn get_refs_vec(commit: &Commit, head: &str, remote_head: &str) -> Vec<&'static 
         res.push("HEAD");
     }
     if commit.id == remote_head {
-        res.push("origin/HEAD");
+        res.push("remote/HEAD");
     }
     res
 }

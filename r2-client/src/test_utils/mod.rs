@@ -53,6 +53,7 @@ pub mod user {
 
     lazy_static! {
         pub static ref ME_A: Me = Me::from_certs(
+            &*CA_CERT,
             CLIENT_A_SIGN_KEY.to_owned(),
             CLIENT_A_SIGN_CERT.cert.to_owned(),
             CLIENT_A_AUTH_KEY.to_owned(),
@@ -65,6 +66,7 @@ pub mod user {
             DocCollaborator::from_certificate(CLIENT_A_AUTH_CERT.cert.to_owned(), &*CA_CERT)
                 .unwrap();
         pub static ref ME_B: Me = Me::from_certs(
+            &*CA_CERT,
             CLIENT_B_SIGN_KEY.to_owned(),
             CLIENT_B_SIGN_CERT.cert.to_owned(),
             CLIENT_B_AUTH_KEY.to_owned(),

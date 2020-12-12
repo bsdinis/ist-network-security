@@ -5,13 +5,16 @@ use openssl_utils::{aead::SealedSecretBox, SealedAeadKey};
 use protos::client_api_client::ClientApiClient;
 
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
-use tonic::{Request, Status};
+use tonic::{Code as StatusCode, Request, Status};
 
 use iterutils::{MapIntoExt, MapTryIntoExt};
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 
 use thiserror::Error;
+
+use chrono::{DateTime, TimeZone, Utc};
+use lazy_static::lazy_static;
 
 pub struct GrpcRemote {
     channel: Channel,
@@ -20,6 +23,14 @@ pub struct GrpcRemote {
 pub struct GrpcRemoteFile {
     id: String,
     client: ClientApiClient<Channel>,
+}
+
+lazy_static! {
+    static ref DT: DateTime<Utc> = Utc.ymd(2000, 1, 1).and_hms_nano(0, 0, 1, 444);
+}
+
+fn gen_timestamp() -> u64 {
+    DT.timestamp_nanos() as u64
 }
 
 #[derive(Debug, Error)]
@@ -32,6 +43,9 @@ pub enum GrpcRemoteError {
 
     #[error("Server did not send required field {}", .0)]
     MissingField(&'static str),
+
+    #[error("Failed commit precondition. Did you forget to `pull`? {}", .0.message())]
+    FailedCommitPrecondition(Status),
 
     #[error("Server sent unexpected status: {:?}", .0)]
     UnexpectedStatus(#[from] Status),
@@ -73,18 +87,21 @@ impl Remote for GrpcRemote {
 
         let collaborators: Vec<protos::Collaborator> = collaborators.map_into();
 
-        let initial_commit: Option<protos::Commit> = Some(initial_commit.into());
+        let ts = gen_timestamp();
 
         let res = client
             .create(Request::new(protos::CreateRequest {
-                initial_commit,
                 collaborators,
+                seqno: 0, // None
+                view: 0,  // None
+                ts,
             }))
             .await?
             .into_inner();
-
         let id = res.document_id;
-        let file = GrpcRemoteFile { id: id, client };
+
+        let mut file = GrpcRemoteFile { id: id, client };
+        file.commit(initial_commit).await?;
 
         Ok(file)
     }
@@ -103,8 +120,12 @@ impl RemoteFile for GrpcRemoteFile {
     type Id = String;
 
     async fn load_metadata(&mut self) -> Result<FileMetadata, Self::Error> {
+        let ts = gen_timestamp();
         let req = protos::GetMetadataRequest {
             document_id: self.id.to_owned(),
+            seqno: 0,
+            view: 0,
+            ts,
         };
 
         let resp = self.client.get_metadata(req).await?.into_inner();
@@ -113,9 +134,13 @@ impl RemoteFile for GrpcRemoteFile {
     }
 
     async fn load_commit(&mut self, commit_id: &str) -> Result<CipheredCommit, Self::Error> {
+        let ts = gen_timestamp();
         let req = protos::GetCommitRequest {
             document_id: self.id.to_owned(),
             commit_id: commit_id.to_owned(),
+            ts,
+            seqno: 0,
+            view: 0,
         };
 
         let resp = self.client.get_commit(req).await?.into_inner();
@@ -127,14 +152,22 @@ impl RemoteFile for GrpcRemoteFile {
     }
 
     async fn commit(&mut self, commit: CipheredCommit) -> Result<(), Self::Error> {
+        let ts = gen_timestamp();
         let req = protos::CommitRequest {
             document_id: self.id.to_owned(),
             commit: Some(commit.into()),
+            ts,
+            seqno: 0,
+            view: 0,
         };
 
-        self.client.commit(req).await?;
-
-        Ok(())
+        match self.client.commit(req).await {
+            Ok(_) => Ok(()),
+            Err(s) if s.code() == StatusCode::FailedPrecondition => {
+                Err(GrpcRemoteError::FailedCommitPrecondition(s))
+            }
+            Err(s) => Err(s.into()),
+        }
     }
 
     async fn load_collaborators(&mut self) -> Result<Vec<RemoteCollaborator>, Self::Error> {
@@ -222,6 +255,7 @@ impl Into<protos::Commit> for CipheredCommit {
     fn into(self) -> protos::Commit {
         protos::Commit {
             commit_id: self.id,
+            prev_commit_id: self.prev_commit_id.unwrap_or(String::new()),
             ciphertext: self.data.ciphertext,
             nonce: self.data.nonce.into(),
             aad: self.data.aad,
@@ -234,8 +268,15 @@ impl TryFrom<protos::Commit> for CipheredCommit {
     type Error = GrpcRemoteError;
 
     fn try_from(msg: protos::Commit) -> Result<Self, Self::Error> {
+        let prev_commit_id = if msg.prev_commit_id == "" {
+            None
+        } else {
+            Some(msg.prev_commit_id)
+        };
+
         Ok(CipheredCommit {
             id: msg.commit_id,
+            prev_commit_id,
             data: SealedSecretBox {
                 ciphertext: msg.ciphertext,
                 nonce: msg

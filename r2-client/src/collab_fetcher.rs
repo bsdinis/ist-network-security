@@ -3,7 +3,7 @@ use openssl_utils::PublicKeyFingerprintExt;
 use protos::identity_client::IdentityClient;
 use protos::GetCertificateRequest;
 use thiserror::Error;
-use tonic::transport::{Certificate, Channel, ClientTlsConfig, Uri};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Uri};
 use tonic::{Request, Status};
 
 use crate::model::{CommitAuthor, DocCollaborator};
@@ -38,7 +38,7 @@ pub trait CollaboratorFetcher: Sized {
 
 pub struct IdentityCollaboratorFetcher {
     ca_cert: X509,
-    channel: Channel,
+    endpoint: Endpoint,
 }
 
 #[derive(Error, Debug)]
@@ -66,11 +66,9 @@ impl IdentityCollaboratorFetcher {
 
         let ca_cert_for_tonic = Certificate::from_pem(ca_cert_pem);
         let tls_config = ClientTlsConfig::new().ca_certificate(ca_cert_for_tonic);
-        let channel = Channel::builder(uri)
-            .tls_config(tls_config)?
-            .connect_lazy()?;
+        let endpoint = Channel::builder(uri).tls_config(tls_config)?;
 
-        Ok(IdentityCollaboratorFetcher { ca_cert, channel })
+        Ok(IdentityCollaboratorFetcher { ca_cert, endpoint })
     }
 }
 
@@ -82,8 +80,9 @@ impl CollaboratorFetcher for IdentityCollaboratorFetcher {
     ) -> Result<X509, CollaboratorFetcherError> {
         let cert = {
             let pubkey_fingerprint = pubkey_fingerprint.to_owned();
+            let channel = self.endpoint.clone().connect().await?;
 
-            IdentityClient::new(self.channel.clone())
+            IdentityClient::new(channel)
                 .get_certificate(Request::new(GetCertificateRequest { pubkey_fingerprint }))
                 .await?
                 .into_inner()

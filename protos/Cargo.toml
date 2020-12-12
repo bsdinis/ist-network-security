@@ -12,6 +12,7 @@ edition = "2018"
 prost = "0.6.1"
 #tonic = "0.3.1" # bug in hyper/tonic means we need to do some things by hand
 tonic = { git = "https://github.com/abread/tonic", branch = "mtls-expose-peer-certs" }
+serde = { version = "1.0", features = ["derive"] }
 
 [build-dependencies]
 tonic-build = "0.3.1"
