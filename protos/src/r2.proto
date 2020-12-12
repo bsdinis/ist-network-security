@@ -1,0 +1,154 @@
+syntax = "proto3";
+
+package r2;
+
+message Collaborator {
+	// Authentication Public Key Fingerprint
+	bytes auth_fingerprint = 1;
+
+	// Ciphered document key (for auth public key)
+	bytes ciphered_document_key = 2;
+}
+
+message Commit {
+	string commit_id = 1;
+	bytes ciphertext = 2;
+	bytes nonce = 3;
+	bytes aad = 4;
+	bytes tag = 5;
+}
+
+message CreateRequest {
+	// Initial commit
+	Commit initial_commit = 1;
+
+	// Collaborators
+	repeated Collaborator collaborators = 2;
+}
+
+message CreateResponse {
+	string document_id = 1;
+}
+
+message CommitRequest {
+	string document_id = 1;
+	Commit commit = 2;
+}
+
+message CommitResponse {}
+
+message GetCommitRequest {
+	string document_id = 1;
+	string commit_id = 2;
+}
+
+message GetCommitResponse {
+	Commit commit = 1;
+}
+
+message GetMetadataRequest {
+	string document_id = 1;
+}
+
+message GetMetadataResponse {
+	string head = 1;
+	bytes ciphered_document_key = 2;
+	SquashRequest pending_squash = 3;
+	int64 squash_vote_tally = 4;
+	RollbackRequest pending_rollback = 5;
+	int64 rollback_vote_tally = 6;
+}
+
+message EditCollaboratorsRequest {
+	string document_id = 1;
+
+	// new collaborators list
+	repeated Collaborator collaborators = 2;
+
+	// commits encrypted with new document key (required if document key changed)
+	repeated Commit commits = 3;
+}
+
+message EditCollaboratorsResponse {}
+
+message GetCollaboratorsRequest {
+	string document_id = 1;
+}
+
+message GetCollaboratorsResponse {
+	repeated Collaborator collaborators = 1;
+}
+
+message SquashRequest {
+	string document_id = 1;
+
+	// true means positive vote, false means negative/cancel vote
+	bool vote = 2;
+
+	// must be ordered (first to last)
+	repeated string dropped_commit_ids = 3;
+
+	// squash always changes document_key, so all commits must be reciphered
+	// last commit is the newly squashed commit
+	repeated Commit all_commits = 4;
+
+	// list of collaborators with updated document keys
+	// must not add nor remove any collaborator
+	repeated Collaborator collaborators = 5;
+}
+
+message SquashResponse {
+	int64 vote_tally = 1;
+}
+
+message RollbackRequest {
+	string document_id = 1;
+
+	// true means positive vote, false means negative/cancel vote
+	bool vote = 2;
+
+	string target_commit_id = 3;
+	repeated string dropped_commit_ids = 4;
+
+	// rollback always changes document_key, so all commits must be reciphered
+	repeated Commit all_commits = 5;
+
+	// list of collaborators with updated document keys
+	// must not add nor remove any collaborator
+	repeated Collaborator collaborators = 6;
+}
+
+message RollbackResponse {
+	int64 vote_tally = 1;
+}
+
+service ClientApi {
+	// Create document
+	rpc create(CreateRequest) returns (CreateResponse);
+
+	// Get document metadata (HEAD, colaborators)
+	rpc get_metadata(GetMetadataRequest) returns (GetMetadataResponse);
+
+	// Get one commit
+	rpc get_commit(GetCommitRequest) returns (GetCommitResponse);
+
+	// Commit and advance HEAD
+	rpc commit(CommitRequest) returns (CommitResponse);
+
+	// Change list of collaborators
+	rpc edit_collaborators(EditCollaboratorsRequest) returns (EditCollaboratorsResponse);
+
+	// Get list of collaborators
+	rpc get_collaborators(GetCollaboratorsRequest) returns (GetCollaboratorsResponse);
+
+	// Vote for squashing commits
+	// to_commit_id must match the server's head
+	// Prevents other commits for a set period of time
+	// Will only finish when the squash proceeeds or is cancelled
+	rpc squash(SquashRequest) returns (stream SquashResponse);
+
+	// Vote for rolling back HEAD (and discarding commits ahead of it)
+	// Prevents other commits for a set period of time
+	// Will only finish when the rollback proceeeds or is cancelled
+	rpc rollback(RollbackRequest) returns (stream RollbackResponse);
+}

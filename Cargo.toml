@@ -1,0 +1,11 @@
+[workspace]
+members = [
+	"r2",
+	"protos",
+	"r2-client",
+	"r2-server",
+	"r2-identity",
+	"openssl-utils",
+	"test-ca-setup",
+	"iterutils",
+]
