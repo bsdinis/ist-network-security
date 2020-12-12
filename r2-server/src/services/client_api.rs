@@ -128,8 +128,6 @@ impl ClientApi for ClientApiService {
             .map_err(|err| Status::invalid_argument(format!("error: {:?}", err)))?;
         Ok(Response::new(CreateResponse {
             document_id: doc_id.to_simple().to_string(),
-            ts: 0,
-            view: 0,
         }))
     }
 
@@ -160,9 +158,6 @@ impl ClientApi for ClientApiService {
                 document_id: x.document_id,
                 vote: x.vote,
                 dropped_commit_ids: x.dropped_commits, // TODO fix
-                seqno: x.seqno,
-                view: x.view,
-                ts: x.ts,
                 all_commits: x
                     .all_commits
                     .into_iter()
@@ -188,9 +183,6 @@ impl ClientApi for ClientApiService {
             pending_rollback: metadata.pending_rollback.map(|x| RollbackRequest {
                 document_id: x.document_id,
                 vote: x.vote,
-                seqno: x.seqno,
-                view: x.view,
-                ts: x.ts,
                 dropped_commit_ids: x.dropped_commits, // TODO fix
                 target_commit_id: format!("{:?}", x.target_commit),
                 all_commits: x
@@ -215,8 +207,6 @@ impl ClientApi for ClientApiService {
                     .collect(),
             }),
             rollback_vote_tally: metadata.rollback_vote_tally.unwrap_or(-1),
-            ts: 0,
-            view: 0,
         }))
     }
 
@@ -235,8 +225,6 @@ impl ClientApi for ClientApiService {
         .map(|commit| {
             Response::new(GetCommitResponse {
                 commit: Some(commit),
-                ts: 0,
-                view: 0,
             })
         })
         .map_err(|err| match err {
@@ -293,7 +281,7 @@ impl ClientApi for ClientApiService {
             ServiceError::InvariantError(msg) => Status::failed_precondition(msg),
             _ => Status::unimplemented(format!("unknown error for commit: {:?}", err)),
         })
-        .map(|_| Response::new(CommitResponse { ts: 0, view: 0 }))
+        .map(|_| Response::new(CommitResponse {}))
     }
 
     #[instrument]
@@ -317,7 +305,7 @@ impl ClientApi for ClientApiService {
             }
             _ => Status::unimplemented(format!("unknown error for commit: {:?}", err)),
         })
-        .map(|_| Response::new(EditCollaboratorsResponse { ts: 0, view: 0 }))
+        .map(|_| Response::new(EditCollaboratorsResponse {}))
     }
 
     #[instrument]
@@ -332,8 +320,6 @@ impl ClientApi for ClientApiService {
             .map(|collabs| {
                 Response::new(GetCollaboratorsResponse {
                     document_id: doc_id.to_simple().to_string(),
-                    view: 0,
-                    ts: 0,
                     collaborators: collabs,
                 })
             })
@@ -365,79 +351,5 @@ impl ClientApi for ClientApiService {
             client_id, request
         );
         Err(Status::unimplemented("hold up, not yet"))
-    }
-
-    #[instrument]
-    async fn get_create_response(
-        &self,
-        request: Request<GetRequestReply>,
-    ) -> Result<Response<CreateResponse>, Status> {
-        let client_id = authenticate(&request).await?;
-        Err(Status::unimplemented("TODO"))
-    }
-
-    #[instrument]
-    async fn get_get_metadata_response(
-        &self,
-        request: Request<GetRequestReply>,
-    ) -> Result<Response<GetMetadataResponse>, Status> {
-        let client_id = authenticate(&request).await?;
-        Err(Status::unimplemented("TODO"))
-    }
-
-    #[instrument]
-    async fn get_get_commit_response(
-        &self,
-        request: Request<GetRequestReply>,
-    ) -> Result<Response<GetCommitResponse>, Status> {
-        let client_id = authenticate(&request).await?;
-        Err(Status::unimplemented("TODO"))
-    }
-
-    #[instrument]
-    async fn get_commit_response(
-        &self,
-        request: Request<GetRequestReply>,
-    ) -> Result<Response<CommitResponse>, Status> {
-        let client_id = authenticate(&request).await?;
-        Err(Status::unimplemented("TODO"))
-    }
-
-    #[instrument]
-    async fn get_edit_collaborators_response(
-        &self,
-        request: Request<GetRequestReply>,
-    ) -> Result<Response<EditCollaboratorsResponse>, Status> {
-        let client_id = authenticate(&request).await?;
-        Err(Status::unimplemented("TODO"))
-    }
-
-    #[instrument]
-    async fn get_get_collaborators_response(
-        &self,
-        request: Request<GetRequestReply>,
-    ) -> Result<Response<GetCollaboratorsResponse>, Status> {
-        let client_id = authenticate(&request).await?;
-        Err(Status::unimplemented("TODO"))
-    }
-
-    type get_squash_responseStream = mpsc::Receiver<Result<SquashResponse, Status>>;
-    #[instrument]
-    async fn get_squash_response(
-        &self,
-        request: Request<GetRequestReply>,
-    ) -> Result<Response<Self::get_squash_responseStream>, Status> {
-        let client_id = authenticate(&request).await?;
-        Err(Status::unimplemented("TODO"))
-    }
-
-    type get_rollback_responseStream = mpsc::Receiver<Result<RollbackResponse, Status>>;
-    #[instrument]
-    async fn get_rollback_response(
-        &self,
-        request: Request<GetRequestReply>,
-    ) -> Result<Response<Self::get_rollback_responseStream>, Status> {
-        let client_id = authenticate(&request).await?;
-        Err(Status::unimplemented("TODO"))
     }
 }

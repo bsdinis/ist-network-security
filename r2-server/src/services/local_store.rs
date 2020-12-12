@@ -64,9 +64,6 @@ pub struct SquashRequest {
     pub dropped_commits: Vec<String>,
     pub all_commits: Vec<ServerCommit>,
     pub collaborators: Vec<Collaborator>,
-    pub seqno: u64,
-    pub view: u64,
-    pub ts: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -77,9 +74,6 @@ pub struct RollbackRequest {
     pub dropped_commits: Vec<String>,
     pub all_commits: Vec<ServerCommit>,
     pub collaborators: Vec<Collaborator>,
-    pub seqno: u64,
-    pub view: u64,
-    pub ts: u64,
 }
 
 #[derive(Debug, PartialEq)]

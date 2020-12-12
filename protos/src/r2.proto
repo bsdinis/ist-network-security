@@ -24,53 +24,31 @@ message CreateRequest {
 	// Collaborators
 	repeated Collaborator collaborators = 2;
 
-    uint64 ts = 3;
-    // server only
-    uint64 seqno = 4;
-    uint64 view = 5;
 }
 
 message CreateResponse {
 	string document_id = 1;
-    uint64 view = 2;
-    uint64 ts = 3;
 }
 
 message CommitRequest {
 	string document_id = 1;
 	Commit commit = 2;
-    uint64 ts = 3;
-    // server only
-    uint64 seqno = 4;
-    uint64 view = 5;
 }
 
 message CommitResponse {
-    uint64 view = 1;
-    uint64 ts = 2;
 }
 
 message GetCommitRequest {
 	string document_id = 1;
 	string commit_id = 2;
-    uint64 ts = 3;
-    // server only
-    uint64 seqno = 4;
-    uint64 view = 5;
 }
 
 message GetCommitResponse {
 	Commit commit = 1;
-    uint64 view = 2;
-    uint64 ts = 3;
 }
 
 message GetMetadataRequest {
 	string document_id = 1;
-    uint64 ts = 2;
-    // server only
-    uint64 seqno = 3;
-    uint64 view = 4;
 }
 
 message GetMetadataResponse {
@@ -80,8 +58,6 @@ message GetMetadataResponse {
 	int64 squash_vote_tally = 4;
 	RollbackRequest pending_rollback = 5;
 	int64 rollback_vote_tally = 6;
-    uint64 view = 7;
-    uint64 ts = 8;
 }
 
 message EditCollaboratorsRequest {
@@ -93,30 +69,17 @@ message EditCollaboratorsRequest {
 	// commits encrypted with new document key (required if document key changed)
 	repeated Commit commits = 3;
 
-    uint64 ts = 4;
-    // server only
-    uint64 seqno = 5;
-    uint64 view = 6;
 }
 
-message EditCollaboratorsResponse {
-    uint64 view = 1;
-    uint64 ts = 2;
-}
+message EditCollaboratorsResponse { }
 
 message GetCollaboratorsRequest {
 	string document_id = 1;
-    uint64 ts = 2;
-    // server only
-    uint64 seqno = 3;
-    uint64 view = 4;
 }
 
 message GetCollaboratorsResponse {
 	repeated Collaborator collaborators = 1;
 	string document_id = 2;
-    uint64 view = 3;
-    uint64 ts = 4;
 }
 
 message SquashRequest {
@@ -136,17 +99,11 @@ message SquashRequest {
 	// must not add nor remove any collaborator
 	repeated Collaborator collaborators = 5;
 
-    uint64 ts = 6;
-
-    // server only
-    uint64 seqno = 7;
-    uint64 view = 8;
 }
 
 message SquashResponse {
 	int64 vote_tally = 1;
 	string document_id = 2;
-    uint64 ts = 3;
 }
 
 message RollbackRequest {
@@ -164,109 +121,42 @@ message RollbackRequest {
 	// list of collaborators with updated document keys
 	// must not add nor remove any collaborator
 	repeated Collaborator collaborators = 6;
-
-    uint64 ts = 7;
-
-    // server only
-    uint64 seqno = 8;
-    uint64 view = 9;
 }
 
 message RollbackResponse {
 	int64 vote_tally = 1;
 	string document_id = 2;
-    uint64 ts = 3;
 }
 
-message GetRequestReply {
-    uint64 ts = 1;
-}
-
-message BFTPrePrepareResponse { }
-message BFTPrepareRequest {
-    uint64 seqno = 1;
-    uint64 view = 2;
-    bytes digest = 3;
-}
-message BFTPrepareResponse { }
-
-message BFTCommitRequest {
-    uint64 seqno = 1;
-    uint64 view = 2;
-    bytes digest = 3;
-    uint64 replica_id = 4;
-}
-message BFTCommitResponse { }
+message GetRequestReply { }
 
 service ClientApi {
 	// Create document
 	rpc create(CreateRequest) returns (CreateResponse);
-    rpc get_create_response(GetRequestReply) returns (CreateResponse);
 
 	// Get document metadata (HEAD, colaborators)
 	rpc get_metadata(GetMetadataRequest) returns (GetMetadataResponse);
-    rpc get_get_metadata_response(GetRequestReply) returns (GetMetadataResponse);
 
 	// Get one commit
 	rpc get_commit(GetCommitRequest) returns (GetCommitResponse);
-    rpc get_get_commit_response(GetRequestReply) returns (GetCommitResponse);
 
 	// Commit and advance HEAD
 	rpc commit(CommitRequest) returns (CommitResponse);
-    rpc get_commit_response(GetRequestReply) returns (CommitResponse);
 
 	// Change list of collaborators
 	rpc edit_collaborators(EditCollaboratorsRequest) returns (EditCollaboratorsResponse);
-    rpc get_edit_collaborators_response(GetRequestReply) returns (EditCollaboratorsResponse);
 
 	// Get list of collaborators
 	rpc get_collaborators(GetCollaboratorsRequest) returns (GetCollaboratorsResponse);
-    rpc get_get_collaborators_response(GetRequestReply) returns (GetCollaboratorsResponse);
 
 	// Vote for squashing commits
 	// to_commit_id must match the server's head
 	// Prevents other commits for a set period of time
 	// Will only finish when the squash proceeeds or is cancelled
 	rpc squash(SquashRequest) returns (stream SquashResponse);
-    rpc get_squash_response(GetRequestReply) returns (stream SquashResponse);
 
 	// Vote for rolling back HEAD (and discarding commits ahead of it)
 	// Prevents other commits for a set period of time
 	// Will only finish when the rollback proceeeds or is cancelled
 	rpc rollback(RollbackRequest) returns (stream RollbackResponse);
-    rpc get_rollback_response(GetRequestReply) returns (stream RollbackResponse);
-}
-
-service ServerApi {
-	// Create document
-	rpc create(CreateRequest) returns (BFTPrePrepareResponse);
-
-	// Get document metadata (HEAD, colaborators)
-	rpc get_metadata(GetMetadataRequest) returns (BFTPrePrepareResponse);
-
-	// Get one commit
-	rpc get_commit(GetCommitRequest) returns (BFTPrePrepareResponse);
-
-	// Commit and advance HEAD
-	rpc commit(CommitRequest) returns (BFTPrePrepareResponse);
-
-	// Change list of collaborators
-	rpc edit_collaborators(EditCollaboratorsRequest) returns (BFTPrePrepareResponse);
-
-	// Get list of collaborators
-	rpc get_collaborators(GetCollaboratorsRequest) returns (BFTPrePrepareResponse);
-
-	// Vote for squashing commits
-	// to_commit_id must match the server's head
-	// Prevents other commits for a set period of time
-	// Will only finish when the squash proceeeds or is cancelled
-	rpc squash(SquashRequest) returns (stream BFTPrePrepareResponse);
-
-	// Vote for rolling back HEAD (and discarding commits ahead of it)
-	// Prevents other commits for a set period of time
-	// Will only finish when the rollback proceeeds or is cancelled
-	rpc rollback(RollbackRequest) returns (stream BFTPrePrepareResponse);
-
-    rpc bft_prepare(BFTPrepareRequest) returns (BFTPrepareResponse);
-    rpc bft_commit(BFTCommitRequest) returns (BFTCommitResponse);
 }
